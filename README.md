@@ -30,16 +30,13 @@ npm run tauri dev
 ```bash
 npm run build:win
 ```
-Output will be in `src-tauri/target/x86_64-pc-windows-msvc/release/`
 
 #### macOS (Apple Silicon)
 ```bash
 npm run build:mac
 ```
-Output will be in `src-tauri/target/aarch64-apple-darwin/release/`
 
 #### macOS (Intel)
 ```bash
 npm run build:mac-intel
 ```
-Output will be in `src-tauri/target/x86_64-apple-darwin/release/`
