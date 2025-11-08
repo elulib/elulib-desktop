@@ -3,11 +3,14 @@
   "version": "0.1.0",
   "main": "index.js",
   "scripts": {
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "build:win": "cargo tauri build --target x86_64-pc-windows-msvc",
+    "build:mac": "cargo tauri build --target aarch64-apple-darwin",
+    "build:mac-intel": "cargo tauri build --target x86_64-apple-darwin"
   },
-  "author": "",
-  "license": "ISC",
-  "description": "",
+  "author": "elulib",
+  "license": "",
+  "description": "Application de bureau élulib",
   "devDependencies": {
     "@tauri-apps/api": "^2.9.0",
     "@tauri-apps/cli": "^2.9.3"
