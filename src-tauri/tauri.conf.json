@@ -43,7 +43,9 @@
         "type": "downloadBootstrapper"
       },
       "wix": {
-        "language": "fr-FR"
+        "language": "fr-FR",
+        "dialogImagePath": "icons/dialog_background.bmp",
+        "bannerPath": "icons/dialog_banner.bmp"
       }
     },
     "macOS": {
