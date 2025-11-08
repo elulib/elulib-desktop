@@ -1,0 +1,15 @@
+{
+  "name": "elulib-desktop",
+  "version": "0.1.0",
+  "main": "index.js",
+  "scripts": {
+    "tauri": "tauri"
+  },
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "devDependencies": {
+    "@tauri-apps/api": "^2.9.0",
+    "@tauri-apps/cli": "^2.9.3"
+  }
+}

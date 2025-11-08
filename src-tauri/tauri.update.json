@@ -1,0 +1,23 @@
+{
+  "version": "0.1.0",
+  "notes": "Version initiale de l'application élulib",
+  "pub_date": "2025-11-08T00:00:00Z",
+  "platforms": {
+    "darwin-x86_64": {
+      "signature": "",
+      "url": "https://github.com/elulib/desktop-app/releases/download/v0.1.0/elulib_0.1.0_x64.dmg"
+    },
+    "darwin-aarch64": {
+      "signature": "",
+      "url": "https://github.com/elulib/desktop-app/releases/download/v0.1.0/elulib_0.1.0_aarch64.dmg"
+    },
+    "windows-x86_64": {
+      "signature": "",
+      "url": "https://github.com/elulib/desktop-app/releases/download/v0.1.0/elulib_0.1.0_x64-setup.nsis.zip"
+    },
+    "linux-x86_64": {
+      "signature": "",
+      "url": "https://github.com/elulib/desktop-app/releases/download/v0.1.0/elulib_0.1.0_amd64.AppImage"
+    }
+  }
+}
