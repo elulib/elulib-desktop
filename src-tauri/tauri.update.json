@@ -14,10 +14,6 @@
     "windows-x86_64": {
       "signature": "",
       "url": "https://github.com/elulib/desktop-app/releases/download/v0.1.0/elulib_0.1.0_x64-setup.nsis.zip"
-    },
-    "linux-x86_64": {
-      "signature": "",
-      "url": "https://github.com/elulib/desktop-app/releases/download/v0.1.0/elulib_0.1.0_amd64.AppImage"
     }
   }
 }

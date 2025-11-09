@@ -9,7 +9,7 @@
     "build:mac-intel": "cargo tauri build --target x86_64-apple-darwin"
   },
   "author": "elulib",
-  "license": "",
+  "license": "MIT",
   "description": "Application de bureau élulib",
   "devDependencies": {
     "@tauri-apps/api": "^2.9.0",

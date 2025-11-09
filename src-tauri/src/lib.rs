@@ -1,3 +1,5 @@
+mod notifications;
+
 use tauri::{
     AppHandle, Manager, Runtime, WebviewUrl, WebviewWindowBuilder,
     menu::{MenuBuilder, MenuItemBuilder},
@@ -154,7 +156,9 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_log::Builder::new().build())
+        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_log::Builder::default().build())
+        .plugin(notifications::init())
         .setup(|app| {
             setup_tray(app)?;
             if app.get_webview_window("main").is_none() {
