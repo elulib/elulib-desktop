@@ -20,6 +20,9 @@ log = "0.4"
 thiserror = "1.0"
 serde_repr = "0.1"
 tokio = { version = "1.0", features = ["rt-multi-thread", "time"] }
+keyring = "2.0"
+tauri-plugin-shell = "2.0"
+url = "2.5"
 
 # Tauri dependencies
 tauri = { version = "2.9.2", features = ["tray-icon", "image-ico", "image-png"] }

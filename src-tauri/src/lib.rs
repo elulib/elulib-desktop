@@ -4,6 +4,7 @@ use tauri::{
     tray::{TrayIconBuilder, TrayIconEvent, MouseButton, MouseButtonState},
     image::Image,
 };
+use tauri::command;
 
 #[cfg(target_os = "windows")]
 const TRAY_ICON: &[u8] = include_bytes!("../icons/icon.ico");
@@ -50,6 +51,24 @@ async fn check_for_updates<R: Runtime>(app: &AppHandle<R>) {
             log::debug!("Erreur lors de la vérification des mises à jour: {}", e);
         }
     }
+}
+
+#[command]
+async fn set_token(service: String, username: String, token: String) -> Result<(), String> {
+    let entry = match keyring::Entry::new(&service, &username) {
+        Ok(e) => e,
+        Err(e) => return Err(format!("Failed to create keyring entry: {}", e)),
+    };
+    entry.set_password(&token).map_err(|e| format!("Keyring set error: {:?}", e))
+}
+
+#[command]
+async fn get_token(service: String, username: String) -> Result<String, String> {
+    let entry = match keyring::Entry::new(&service, &username) {
+        Ok(e) => e,
+        Err(e) => return Err(format!("Failed to create keyring entry: {}", e)),
+    };
+    entry.get_password().map_err(|e| format!("Keyring get error: {:?}", e))
 }
 
 // Création du menu système
@@ -132,13 +151,12 @@ pub fn run() {
     log::info!("Starting élulib application");
     
     tauri::Builder::default()
+        .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_log::Builder::new().build())
         .setup(|app| {
-            // Setup system tray
             setup_tray(app)?;
-            // Création de la fenêtre principale si elle n'existe pas déjà
             if app.get_webview_window("main").is_none() {
                 let _window = WebviewWindowBuilder::new(
                     app,
@@ -150,26 +168,22 @@ pub fn run() {
                 .min_inner_size(480.0, 600.0)
                 .build()?;
             }
-
-            // Vérification des mises à jour au démarrage
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                // Attendre un peu que l'application soit complètement chargée
                 tokio::time::sleep(std::time::Duration::from_secs(5)).await;
                 check_for_updates(&app_handle).await;
             });
-
             Ok(())
         })
         .on_window_event(|app, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                // Cacher la fenêtre au lieu de la fermer
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.hide();
                 }
                 api.prevent_close();
             }
         })
+        .invoke_handler(tauri::generate_handler![set_token, get_token])
         .build(tauri::generate_context!())
         .expect("Erreur lors du démarrage de l'application élulib")
         .run(|_app_handle, event| match event {
