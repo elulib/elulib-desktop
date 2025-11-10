@@ -19,7 +19,7 @@ rustup default stable
 rustup target add x86_64-pc-windows-msvc aarch64-apple-darwin x86_64-apple-darwin
 ```
 
-Start development server:
+Run the app:
 ```bash
 npm run tauri dev
 ```
