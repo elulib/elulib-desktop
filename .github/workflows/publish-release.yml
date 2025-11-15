@@ -1,0 +1,123 @@
+name: Publish Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: macOS (Apple Silicon)
+            os: macos-latest
+            target: aarch64-apple-darwin
+          - label: macOS (Intel)
+            os: macos-13
+            target: x86_64-apple-darwin
+          - label: Windows (x64)
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+    env:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build with Tauri
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          args: --target ${{ matrix.target }}
+          tagName: ${{ github.ref_name }}
+          releaseId: ${{ github.event.release.id }}
+          releaseName: ${{ github.event.release.name }}
+          releaseBody: ${{ github.event.release.body }}
+          releaseDraft: false
+          prerelease: ${{ github.event.release.prerelease }}
+
+  publish-manifest:
+    name: Upload updater manifest
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Sync manifest metadata
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from datetime import datetime, timezone
+
+          path = "src-tauri/tauri.update.json"
+          with open(path, "r", encoding="utf-8") as reader:
+              data = json.load(reader)
+
+          tag = os.environ.get("TAG_NAME", "")
+          version = tag[1:] if tag.startswith("v") else tag
+          notes = os.environ.get("RELEASE_NOTES") or ""
+          pub_date = os.environ.get("RELEASE_DATE")
+          if not pub_date:
+              pub_date = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+          if version:
+              data["version"] = version
+
+          data["notes"] = notes
+          data["pub_date"] = pub_date
+
+          base_url = f"https://github.com/elulib/desktop-app/releases/download/{tag}"
+          platforms = data.get("platforms", {})
+
+          files = {
+              "darwin-x86_64": f"elulib_{version}_x64.dmg",
+              "darwin-aarch64": f"elulib_{version}_aarch64.dmg",
+              "windows-x86_64": f"elulib_{version}_x64-setup.nsis.zip",
+          }
+
+          for platform, filename in files.items():
+              entry = platforms.get(platform)
+              if entry and version:
+                  entry["url"] = f"{base_url}/{filename}"
+
+          with open(path, "w", encoding="utf-8") as writer:
+              json.dump(data, writer, indent=2)
+              writer.write("\n")
+          PY
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+          RELEASE_NOTES: ${{ github.event.release.body }}
+          RELEASE_DATE: ${{ github.event.release.published_at }}
+
+      - name: Attach tauri.update.json to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: src-tauri/tauri.update.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
