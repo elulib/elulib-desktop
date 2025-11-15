@@ -1,21 +1,26 @@
-declare namespace Tauri {
-  interface InvokeArgs {
-    title: string;
-    body?: string;
-  }
+type ShowNotificationArgs = {
+  title: string;
+  body?: string;
+};
 
-  function invoke(
-    cmd: 'show_notification',
-    args: InvokeArgs
-  ): Promise<void>;
-}
+type ShowNotificationInvoke = (
+  cmd: 'show_notification',
+  args: ShowNotificationArgs
+) => Promise<void>;
+
+type TauriCoreApi = {
+  invoke: ShowNotificationInvoke;
+};
+
+type TauriBridge = {
+  core?: TauriCoreApi;
+  invoke?: ShowNotificationInvoke;
+};
 
 declare global {
   interface Window {
-    __TAURI__: {
-      invoke: typeof Tauri.invoke;
-    };
+    __TAURI__?: TauriBridge;
   }
 }
 
-export {}
+export {};

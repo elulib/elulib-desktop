@@ -3,23 +3,11 @@
   "productName": "élulib",
   "version": "0.1.0",
   "identifier": "com.elulib.desktop",
-  "build": {},
+  "build": {
+    "frontendDist": "./static"
+  },
   "app": {
     "withGlobalTauri": true,
-    "windows": [
-      {
-        "label": "main",
-        "title": "élulib",
-        "width": 1024,
-        "minWidth": 480,
-        "height": 768,
-        "resizable": true,
-        "fullscreen": false,
-        "center": true,
-        "decorations": true,
-        "url": "https://app.elulib.com"
-      }
-    ],
     "security": {
       "csp": "default-src 'self' https://app.elulib.com; img-src 'self' https://app.elulib.com data:; script-src 'self' https://app.elulib.com; style-src 'self' https://app.elulib.com; connect-src 'self' https://app.elulib.com;"
     }
@@ -37,7 +25,7 @@
     ],
     "copyright": "Copyright © 2025 élulib",
     "licenseFile": "../LICENSE",
-    "resources": [],
+    "resources": ["./static"],
     "externalBin": [],
     "windows": {
       "webviewInstallMode": {
@@ -59,18 +47,9 @@
     },
     "macOS": {
       "dmg": {
-        "appPosition": {
-          "x": 180,
-          "y": 170
-        },
-        "applicationFolderPosition": {
-          "x": 480,
-          "y": 170
-        },
-        "windowSize": {
-          "height": 400,
-          "width": 660
-        }
+        "appPosition": { "x": 180, "y": 170 },
+        "applicationFolderPosition": { "x": 480, "y": 170 },
+        "windowSize": { "height": 400, "width": 660 }
       },
       "files": {},
       "hardenedRuntime": true,
@@ -81,7 +60,7 @@
     "updater": {
       "active": true,
       "endpoints": [
-        "https://github.com/elulib/desktop-app/releases/latest/download/latest.json"
+        "https://github.com/elulib/desktop-app/releases/latest/download/tauri.update.json"
       ],
       "dialog": true,
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDNBQkJEODU1NTU2MjdGOUEKUldTYWYySlZWZGk3T2tveHl6RDltbXk4a3pYaUlSUGpUQmV6QlhCY3BGdStETnpsUVBQNDRrM1YK"

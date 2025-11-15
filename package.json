@@ -13,6 +13,7 @@
   "description": "Application de bureau élulib",
   "devDependencies": {
     "@tauri-apps/api": "^2.9.0",
-    "@tauri-apps/cli": "^2.9.3"
+    "@tauri-apps/cli": "^2.9.3",
+    "@tauri-apps/plugin-opener": "^2.5.2"
   }
 }
