@@ -12,7 +12,8 @@ use tauri::{
     command,
     menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem},
     tray::{TrayIconBuilder, TrayIconEvent, MouseButton, MouseButtonState},
-    App, AppHandle, Manager, Runtime, WebviewUrl, WebviewWindowBuilder,
+    window::Color,
+    App, AppHandle, Manager, Runtime, TitleBarStyle, WebviewUrl, WebviewWindowBuilder,
     image::Image,
 };
 
@@ -179,10 +180,14 @@ fn create_main_window(app: &App) -> tauri::Result<()> {
 
     WebviewWindowBuilder::new(app, "main", url)
         .title(APP_TITLE)
+        .title_bar_style(TitleBarStyle::Visible)
+        .background_color(Color(255, 255, 255, 255))
         .inner_size(WINDOW_WIDTH, WINDOW_HEIGHT)
         .min_inner_size(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT)
         .resizable(true)
         .initialization_script(include_str!("link_handler.js"))
+        .decorations(true)
+        .prevent_overflow()
         .build()?;
 
     Ok(())
