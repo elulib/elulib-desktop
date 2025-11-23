@@ -52,6 +52,7 @@
         "windowSize": { "height": 400, "width": 660 }
       },
       "files": {},
+      "infoPlist": "Info.plist",
       "hardenedRuntime": true,
       "minimumSystemVersion": "10.13"
     }
