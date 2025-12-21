@@ -26,17 +26,17 @@ npm run tauri dev
 
 ### Building
 
-#### Windows
-```bash
-npm run build:win
-```
+- Build the Windows app:
+    ```bash
+    npm run build:win
+    ```
 
-#### macOS (Apple Silicon)
-```bash
-npm run build:mac
-```
+- Build the macOS app for Apple Silicon:
+    ```bash
+    npm run build:mac
+    ```
 
-#### macOS (Intel)
-```bash
-npm run build:mac-intel
-```
+- Build the macOS app for Intel:
+    ```bash
+    npm run build:mac-intel
+    ```
