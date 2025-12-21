@@ -25,7 +25,9 @@
     ],
     "copyright": "Copyright © 2025 élulib",
     "licenseFile": "../LICENSE",
-    "resources": ["./static"],
+    "resources": [
+      "./static"
+    ],
     "externalBin": [],
     "windows": {
       "webviewInstallMode": {
@@ -39,7 +41,9 @@
       },
       "nsis": {
         "installMode": "currentUser",
-        "languages": ["French"],
+        "languages": [
+          "French"
+        ],
         "installerIcon": "icons/win-1024.ico",
         "headerImage": "icons/dialog_signature.bmp",
         "sidebarImage": "icons/dialog_sidebar.bmp"
@@ -47,9 +51,18 @@
     },
     "macOS": {
       "dmg": {
-        "appPosition": { "x": 180, "y": 170 },
-        "applicationFolderPosition": { "x": 480, "y": 170 },
-        "windowSize": { "height": 400, "width": 660 }
+        "appPosition": {
+          "x": 180,
+          "y": 170
+        },
+        "applicationFolderPosition": {
+          "x": 480,
+          "y": 170
+        },
+        "windowSize": {
+          "height": 400,
+          "width": 660
+        }
       },
       "files": {},
       "infoPlist": "Info.plist",

@@ -4,9 +4,10 @@
   "main": "index.js",
   "scripts": {
     "tauri": "tauri",
-    "build:win": "cargo tauri build --target x86_64-pc-windows-msvc",
-    "build:mac": "cargo tauri build --target aarch64-apple-darwin",
-    "build:mac-intel": "cargo tauri build --target x86_64-apple-darwin"
+    "sync-version": "node scripts/sync-version.js",
+    "build:win": "npm run sync-version && cargo tauri build --target x86_64-pc-windows-msvc",
+    "build:mac": "npm run sync-version && cargo tauri build --target aarch64-apple-darwin",
+    "build:mac-intel": "npm run sync-version && cargo tauri build --target x86_64-apple-darwin"
   },
   "author": "elulib",
   "license": "MIT",
