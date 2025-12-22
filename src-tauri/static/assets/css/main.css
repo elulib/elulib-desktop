@@ -132,7 +132,6 @@ p {
     font-weight: 600;
     color: #FFFFFF;
     background-color: #1C1917;
-    cursor: pointer;
     height: 40px;
     display: flex;
     align-items: center;
@@ -141,6 +140,7 @@ p {
     text-decoration: none;
     text-align: center;
     transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: default;
 }
 
 .button.is-primary {
