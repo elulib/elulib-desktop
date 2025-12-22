@@ -297,6 +297,11 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
+      - name: Create signature info file
+        if: steps.sign.outputs.signature != '' && steps.sign.outputs.signature != 'null'
+        run: |
+          echo "${{ steps.sign.outputs.platform_key }}|${{ steps.sign.outputs.signature }}" > signature-info.txt
+
       - name: Upload signature artifact
         if: steps.sign.outputs.signature != '' && steps.sign.outputs.signature != 'null'
         uses: actions/upload-artifact@v4
@@ -304,8 +309,6 @@ jobs:
           name: signature-${{ matrix.target }}
           path: signature-info.txt
           retention-days: 30
-        run: |
-          echo "${{ steps.sign.outputs.platform_key }}|${{ steps.sign.outputs.signature }}" > signature-info.txt
 
   publish-manifest:
     name: Upload updater manifest
