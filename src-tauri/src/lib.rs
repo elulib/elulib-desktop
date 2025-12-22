@@ -350,7 +350,9 @@ fn create_main_window(app: &App) -> tauri::Result<()> {
 
 /// Checks and installs available updates
 /// 
-/// Async function called automatically after startup
+/// Async function called automatically after startup.
+/// Shows a French dialog asking if the user wants to update now or later.
+/// If yes, downloads and installs silently, then exits for fast update.
 async fn perform_update_check<R: Runtime>(app: &AppHandle<R>) {
     let updater = match app.updater() {
         Ok(updater) => updater,
@@ -364,9 +366,9 @@ async fn perform_update_check<R: Runtime>(app: &AppHandle<R>) {
         Ok(Some(update)) => {
             let current_version = app.package_info().version.to_string();
             let dialog_message = format!(
-                "A new version is available. Would you like to install it now?\n\n\
-                Current version: {}\n\
-                New version: {}",
+                "Une nouvelle version est disponible, voulez-vous mettre à jour dès maintenant ?\n\n\
+                Version actuelle : {}\n\
+                Nouvelle version : {}",
                 current_version,
                 &update.version
             );
@@ -376,7 +378,7 @@ async fn perform_update_check<R: Runtime>(app: &AppHandle<R>) {
                 app_for_dialog
                     .dialog()
                     .message(&dialog_message)
-                    .title("Update Available")
+                    .title("Mise à jour disponible")
                     .buttons(tauri_plugin_dialog::MessageDialogButtons::YesNo)
                     .blocking_show()
             })
@@ -391,27 +393,39 @@ async fn perform_update_check<R: Runtime>(app: &AppHandle<R>) {
             };
 
             if should_update {
+                log::info!("User chose to update now, starting silent download and installation...");
+                
+                // Download and install silently (empty callbacks = no progress UI)
+                // This makes the update as fast and quiet as possible
                 match update.download_and_install(|_, _| {}, || {}).await {
                     Ok(_) => {
-                        log::info!("Update installed, closing application to finalize installation...");
-                        let app_after_install = app.clone();
-                        if let Err(e) = tauri::async_runtime::spawn_blocking(move || {
-                            app_after_install
-                                .dialog()
-                                .message("The update has been installed. The application will restart to apply the changes.")
-                                .title("Restart Required")
-                                .blocking_show();
-                        })
-                        .await
-                        {
-                            log::error!("Unable to display restart confirmation: {}", e);
-                        }
+                        log::info!("Update installed successfully, exiting to complete installation...");
+                        // Exit immediately for fastest update - no confirmation dialog needed
+                        // The system will handle the restart automatically
                         std::process::exit(0);
                     }
                     Err(e) => {
                         log::error!("Update installation failed: {}", e);
+                        // Show error dialog in French
+                        let app_for_error = app.clone();
+                        let error_message = format!(
+                            "La mise à jour a échoué : {}\n\n\
+                            Vous pouvez réessayer plus tard via le menu du système.",
+                            e
+                        );
+                        let _ = tauri::async_runtime::spawn_blocking(move || {
+                            app_for_error
+                                .dialog()
+                                .message(&error_message)
+                                .title("Erreur de mise à jour")
+                                .buttons(tauri_plugin_dialog::MessageDialogButtons::Ok)
+                                .blocking_show();
+                        })
+                        .await;
                     }
                 }
+            } else {
+                log::debug!("User chose to update later");
             }
         }
         Ok(None) => log::debug!("No update available"),

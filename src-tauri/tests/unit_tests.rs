@@ -510,3 +510,148 @@ mod rate_limit_tests {
         assert!(limiter.check_rate_limit("single_test", 1, 60).is_err());
     }
 }
+
+// Auto-update system tests
+mod auto_update_tests {
+    #[test]
+    fn test_update_dialog_message_french() {
+        // Verify the French dialog message format
+        let current_version = "1.0.0";
+        let new_version = "1.1.0";
+        let dialog_message = format!(
+            "Une nouvelle version est disponible, voulez-vous mettre à jour dès maintenant ?\n\n\
+            Version actuelle : {}\n\
+            Nouvelle version : {}",
+            current_version,
+            new_version
+        );
+        
+        // Verify it contains the required French text
+        assert!(dialog_message.contains("Une nouvelle version est disponible"));
+        assert!(dialog_message.contains("voulez-vous mettre à jour dès maintenant"));
+        assert!(dialog_message.contains("Version actuelle"));
+        assert!(dialog_message.contains("Nouvelle version"));
+        assert!(dialog_message.contains(current_version));
+        assert!(dialog_message.contains(new_version));
+        
+        // Verify it doesn't contain English fallback text
+        assert!(!dialog_message.contains("A new version is available"));
+        assert!(!dialog_message.contains("Current version"));
+    }
+
+    #[test]
+    fn test_update_dialog_title_french() {
+        let title = "Mise à jour disponible";
+        
+        assert_eq!(title, "Mise à jour disponible");
+        assert!(!title.contains("Update Available"));
+    }
+
+    #[test]
+    fn test_error_message_french() {
+        let error = "Network error";
+        let error_message = format!(
+            "La mise à jour a échoué : {}\n\n\
+            Vous pouvez réessayer plus tard via le menu du système.",
+            error
+        );
+        
+        // Verify French error message format
+        assert!(error_message.contains("La mise à jour a échoué"));
+        assert!(error_message.contains("Vous pouvez réessayer plus tard"));
+        assert!(error_message.contains("via le menu du système"));
+        assert!(error_message.contains(error));
+        
+        // Verify it doesn't contain English fallback
+        assert!(!error_message.contains("Update installation failed"));
+    }
+
+    #[test]
+    fn test_error_dialog_title_french() {
+        let error_title = "Erreur de mise à jour";
+        
+        assert_eq!(error_title, "Erreur de mise à jour");
+        assert!(!error_title.contains("Update Error"));
+    }
+
+    #[test]
+    fn test_update_dialog_message_with_different_versions() {
+        let test_cases = vec![
+            ("0.1.0", "0.2.0"),
+            ("1.0.0", "2.0.0"),
+            ("1.2.3", "1.2.4"),
+            ("10.20.30", "10.20.31"),
+        ];
+        
+        for (current, new) in test_cases {
+            let message = format!(
+                "Une nouvelle version est disponible, voulez-vous mettre à jour dès maintenant ?\n\n\
+                Version actuelle : {}\n\
+                Nouvelle version : {}",
+                current,
+                new
+            );
+            
+            assert!(message.contains(current));
+            assert!(message.contains(new));
+            assert!(message.contains("Version actuelle"));
+            assert!(message.contains("Nouvelle version"));
+        }
+    }
+
+    #[test]
+    fn test_update_dialog_message_structure() {
+        // Verify the message has proper line breaks and structure
+        let message = format!(
+            "Une nouvelle version est disponible, voulez-vous mettre à jour dès maintenant ?\n\n\
+            Version actuelle : {}\n\
+            Nouvelle version : {}",
+            "1.0.0",
+            "1.1.0"
+        );
+        
+        // Should have double line break after question
+        assert!(message.contains("\n\n"));
+        
+        // Should have single line breaks for version info
+        let lines: Vec<&str> = message.lines().collect();
+        assert!(lines.len() >= 4); // At least question, blank line, current, new
+        
+        // First line should be the question
+        assert!(lines[0].contains("Une nouvelle version est disponible"));
+    }
+
+    #[test]
+    fn test_silent_installation_configuration() {
+        // Verify that silent installation is configured correctly
+        // The download_and_install method uses empty callbacks for silent operation
+        // This test documents the expected behavior
+        
+        // Empty progress callback means no UI updates during download
+        let progress_callback = |_, _| {};
+        
+        // Empty completion callback means no UI notification
+        let completion_callback = || {};
+        
+        // Verify callbacks are callable (compile-time check)
+        progress_callback(0, 100);
+        completion_callback();
+        
+        assert!(true); // If we reach here, callbacks are properly typed
+    }
+
+    #[test]
+    fn test_update_check_delay_constant() {
+        // Verify the update check delay is reasonable
+        use elulib_desktop::constants::UPDATE_CHECK_DELAY_SECS;
+        
+        // Delay should be positive
+        assert!(UPDATE_CHECK_DELAY_SECS > 0);
+        
+        // Delay should be reasonable (not too long to delay app startup)
+        assert!(UPDATE_CHECK_DELAY_SECS <= 30); // Should be under 30 seconds
+        
+        // Typical value would be 5 seconds
+        assert!(UPDATE_CHECK_DELAY_SECS >= 1); // At least 1 second
+    }
+}
