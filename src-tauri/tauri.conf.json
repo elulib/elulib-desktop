@@ -66,8 +66,9 @@
       },
       "files": {},
       "infoPlist": "Info.plist",
-      "hardenedRuntime": true,
-      "minimumSystemVersion": "10.13"
+      "hardenedRuntime": false,
+      "minimumSystemVersion": "10.13",
+      "signingIdentity": null
     }
   },
   "plugins": {

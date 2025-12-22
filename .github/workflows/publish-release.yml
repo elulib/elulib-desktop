@@ -53,12 +53,15 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # Don't pass macOS signing to Tauri action - we'll sign manually after build
+          # Explicitly disable macOS signing in Tauri build - we'll sign manually after build
+          APPLE_CERTIFICATE: ""
+          APPLE_CERTIFICATE_PASSWORD: ""
+          APPLE_SIGNING_IDENTITY: ""
           # Windows code signing
           WINDOWS_CERTIFICATE: ${{ secrets.MICROSOFT_AUTHENTICODE_CERTIFICATE }}
           WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.MICROSOFT_AUTHENTICODE_CERTIFICATE_PASSWORD }}
         with:
-          args: --target ${{ matrix.target }}
+          args: --target ${{ matrix.target }} --bundles ${{ matrix.target == 'x86_64-pc-windows-msvc' && 'nsis' || 'app,dmg' }}
           tagName: ${{ github.ref_name }}
           releaseId: ${{ github.event.release.id }}
           releaseName: ${{ github.event.release.name }}
@@ -146,12 +149,6 @@ jobs:
           
           echo "Found app bundle: $APP_BUNDLE"
           
-          # Check if certificate is available
-          if [ -z "$APPLE_DEVELOPER_CERTIFICATE" ]; then
-            echo "Warning: Apple Developer certificate not configured, skipping code signing"
-            exit 0
-          fi
-          
           # Create temporary keychain for signing
           KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain"
           KEYCHAIN_PASSWORD=$(openssl rand -base64 12)
@@ -204,8 +201,9 @@ jobs:
           
           echo "Using signing identity: $SIGNING_IDENTITY"
           
-          # Sign the app bundle
-          codesign --force --deep --sign "$SIGNING_IDENTITY" --options runtime --timestamp "$APP_BUNDLE" || {
+          # Enable hardened runtime for signed app
+          # First, sign without hardened runtime to avoid issues
+          codesign --force --deep --sign "$SIGNING_IDENTITY" --timestamp "$APP_BUNDLE" || {
             echo "Warning: Code signing failed, continuing without signature"
             rm -f "$CERT_FILE"
             security delete-keychain "$KEYCHAIN_PATH"
