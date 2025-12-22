@@ -1,15 +1,16 @@
-//! Point d'entrée principal de l'application élulib
+//! Main entry point of the élulib application
 //!
-//! Ce fichier contient uniquement le point d'entrée principal qui délègue
-//! l'initialisation et l'exécution à la bibliothèque principale.
+//! This file contains only the main entry point that delegates
+//! initialization and execution to the main library.
 
-/// Fonction principale de l'application
+/// Main function of the application
 ///
-/// Désactive la fenêtre de console sur Windows en mode release
-/// et délègue l'exécution à la bibliothèque principale.
+/// Disables the console window on Windows in release mode
+/// and delegates execution to the main library.
 fn main() {
-    // Prévention de l'affichage d'une console supplémentaire sur Windows
+    // Prevent displaying an additional console window on Windows
     #[cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-    // Délégation à la logique principale de l'application
+    // Delegate to the main application logic
+    // If the application cannot start, run() will terminate with an error code
     elulib_desktop::run();
 }

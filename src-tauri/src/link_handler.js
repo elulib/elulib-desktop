@@ -25,7 +25,7 @@
     }
 
     performOpen().catch((error) => {
-      console.error('Impossible d’ouvrir l’URL dans le navigateur:', error);
+      console.error('Unable to open URL in browser:', error);
       openFallback();
     });
   };

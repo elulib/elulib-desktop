@@ -1,11 +1,11 @@
-//! Application desktop élulib - Wrapper Tauri pour l'application web
+//! élulib Desktop Application - Tauri wrapper for the web application
 //!
-//! Cette application fournit une interface native pour accéder à élulib.com
-//! avec gestion hors-ligne, notifications et mises à jour automatiques.
+//! This application provides a native interface to access élulib.com
+//! with offline management, notifications, and automatic updates.
 
 mod notifications;
 
-// === IMPORTS ORGANISÉS ===
+// === ORGANIZED IMPORTS ===
 
 // Core Tauri
 use tauri::{
@@ -17,67 +17,67 @@ use tauri::{
     image::Image,
 };
 
-// Plugins Tauri
+// Tauri Plugins
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_updater::UpdaterExt;
 
-// Utilitaires réseau et asynchrones
+// Network and async utilities
 use std::net::{TcpStream, ToSocketAddrs};
 use std::time::Duration;
 
-// === CONSTANTES DE CONFIGURATION ===
+// === CONFIGURATION CONSTANTS ===
 
-/// URL de l'application web principale
+/// Main web application URL
 const APP_URL: &str = "https://app.elulib.com";
 
-/// Hôte pour la vérification de connectivité
+/// Host for connectivity verification
 const CONNECTIVITY_HOST: &str = "app.elulib.com";
 
-/// Port pour la vérification de connectivité
+/// Port for connectivity verification
 const CONNECTIVITY_PORT: u16 = 443;
 
-/// Timeout pour la vérification de connectivité (secondes)
+/// Timeout for connectivity verification (seconds)
 const CONNECTIVITY_TIMEOUT_SECS: u64 = 2;
 
-/// Timeout de lecture/écriture pour les connexions TCP (secondes)
+/// Read/write timeout for TCP connections (seconds)
 const TCP_RW_TIMEOUT_SECS: u64 = 1;
 
-/// Titre de l'application
+/// Application title
 const APP_TITLE: &str = "élulib";
 
-/// Dimensions de la fenêtre principale
+/// Main window dimensions
 const WINDOW_WIDTH: f64 = 1024.0;
 const WINDOW_HEIGHT: f64 = 768.0;
 
-/// Dimensions minimales de la fenêtre
+/// Minimum window dimensions
 const MIN_WINDOW_WIDTH: f64 = 480.0;
 const MIN_WINDOW_HEIGHT: f64 = 600.0;
 
-/// Délai avant vérification des mises à jour (secondes)
+/// Delay before checking for updates (seconds)
 const UPDATE_CHECK_DELAY_SECS: u64 = 5;
 
-/// URL du fallback local pour l'affichage hors ligne
+/// Local fallback URL for offline display
 const LOCAL_ERROR_PAGE_URL: &str = "http://localhost/connection-error.html";
 
-/// Identifiant autorisé pour le stockage dans le trousseau
+/// Authorized identifier for keyring storage
 const KEYRING_SERVICE_ID: &str = "com.elulib.desktop";
 
-/// Taille maximale autorisée pour le nom d'utilisateur du trousseau
+/// Maximum allowed size for keyring username
 const MAX_USERNAME_LENGTH: usize = 128;
 
-/// Taille maximale autorisée pour un token stocké
+/// Maximum allowed size for a stored token
 const MAX_TOKEN_LENGTH: usize = 4096;
 
-// === FONCTIONS UTILITAIRES ===
+// === UTILITY FUNCTIONS ===
 
-/// Vérifie la connectivité réseau de manière sécurisée
+/// Checks network connectivity securely
 /// 
-/// Utilise une approche synchrone compatible avec le setup de Tauri
-/// avec résolution DNS et timeout pour éviter les blocages
+/// Uses a synchronous approach compatible with Tauri setup
+/// with DNS resolution and timeout to avoid blocking
 /// 
 /// # Returns
-/// * `true` si la connexion est disponible
-/// * `false` si la connexion n'est pas disponible
+/// * `true` if connection is available
+/// * `false` if connection is not available
 #[cfg_attr(test, allow(dead_code))]
 pub(crate) fn check_network_connectivity() -> bool {
     match (CONNECTIVITY_HOST, CONNECTIVITY_PORT).to_socket_addrs() {
@@ -85,64 +85,64 @@ pub(crate) fn check_network_connectivity() -> bool {
             for address in addresses {
                 match TcpStream::connect_timeout(&address, Duration::from_secs(CONNECTIVITY_TIMEOUT_SECS)) {
                     Ok(stream) => {
-                        // Configure les timeouts pour éviter les blocages
+                        // Configure timeouts to avoid blocking
                         let _ = stream.set_read_timeout(Some(Duration::from_secs(TCP_RW_TIMEOUT_SECS)));
                         let _ = stream.set_write_timeout(Some(Duration::from_secs(TCP_RW_TIMEOUT_SECS)));
                         
-                        log::debug!("Connexion TCP réussie à {} via {}", CONNECTIVITY_HOST, address);
+                        log::debug!("TCP connection successful to {} via {}", CONNECTIVITY_HOST, address);
                         return true;
                     }
                     Err(e) => {
-                        log::debug!("Échec de connexion TCP à {} via {} - {}", CONNECTIVITY_HOST, address, e);
+                        log::debug!("TCP connection failed to {} via {} - {}", CONNECTIVITY_HOST, address, e);
                     }
                 }
             }
 
-            log::debug!("Aucune adresse atteignable pour {}", CONNECTIVITY_HOST);
+            log::debug!("No reachable address for {}", CONNECTIVITY_HOST);
             false
         }
         Err(e) => {
-            log::debug!("Échec de résolution DNS pour {}: {}", CONNECTIVITY_HOST, e);
+            log::debug!("DNS resolution failed for {}: {}", CONNECTIVITY_HOST, e);
             false
         }
     }
 }
 
-/// Valide que le service keyring est autorisé
+/// Validates that the keyring service is authorized
 /// 
 /// # Arguments
-/// * `service` - L'identifiant du service à valider
+/// * `service` - The service identifier to validate
 /// 
 /// # Returns
-/// * `Ok(())` si le service est autorisé
-/// * `Err(String)` si le service n'est pas autorisé
+/// * `Ok(())` if the service is authorized
+/// * `Err(String)` if the service is not authorized
 #[cfg_attr(test, allow(dead_code))]
 pub(crate) fn validate_service(service: &str) -> Result<(), String> {
     if service.trim() == KEYRING_SERVICE_ID {
         Ok(())
     } else {
-        Err("Service non autorisé pour le trousseau".into())
+        Err("Service not authorized for keyring".into())
     }
 }
 
-/// Normalise et valide un nom d'utilisateur pour le keyring
+/// Normalizes and validates a username for the keyring
 /// 
 /// # Arguments
-/// * `username` - Le nom d'utilisateur à normaliser
+/// * `username` - The username to normalize
 /// 
 /// # Returns
-/// * `Ok(String)` avec le nom d'utilisateur normalisé
-/// * `Err(String)` si le nom d'utilisateur est invalide
+/// * `Ok(String)` with the normalized username
+/// * `Err(String)` if the username is invalid
 #[cfg_attr(test, allow(dead_code))]
 pub(crate) fn normalize_username(username: &str) -> Result<String, String> {
     let trimmed = username.trim();
 
     if trimmed.is_empty() {
-        return Err("Nom d'utilisateur manquant".into());
+        return Err("Username is missing".into());
     }
 
     if trimmed.len() > MAX_USERNAME_LENGTH {
-        return Err("Nom d'utilisateur trop long".into());
+        return Err("Username too long".into());
     }
 
     if !trimmed
@@ -150,49 +150,49 @@ pub(crate) fn normalize_username(username: &str) -> Result<String, String> {
         .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | '@'))
     {
         return Err(
-            "Nom d'utilisateur invalide (caractères autorisés: a-z, 0-9, ._-@)".into(),
+            "Invalid username (allowed characters: a-z, 0-9, ._-@)".into(),
         );
     }
 
     Ok(trimmed.to_string())
 }
 
-/// Valide un token d'authentification
+/// Validates an authentication token
 /// 
 /// # Arguments
-/// * `token` - Le token à valider
+/// * `token` - The token to validate
 /// 
 /// # Returns
-/// * `Ok(())` si le token est valide
-/// * `Err(String)` si le token est invalide
+/// * `Ok(())` if the token is valid
+/// * `Err(String)` if the token is invalid
 #[cfg_attr(test, allow(dead_code))]
 pub(crate) fn validate_token(token: &str) -> Result<(), String> {
     if token.trim().is_empty() {
-        return Err("Token vide ou manquant".into());
+        return Err("Token is empty or missing".into());
     }
 
     if token.len() > MAX_TOKEN_LENGTH {
-        return Err("Token trop volumineux".into());
+        return Err("Token too large".into());
     }
 
     Ok(())
 }
 
-/// Crée la fenêtre principale selon l'état de la connexion
+/// Creates the main window based on connection state
 /// 
-/// Si la connectivité est disponible, charge l'application web.
-/// Sinon, affiche une page d'erreur locale avec possibilité de réessayer.
+/// If connectivity is available, loads the web application.
+/// Otherwise, displays a local error page with retry option.
 fn create_main_window(app: &App) -> tauri::Result<()> {
     let (url, _is_online) = if check_network_connectivity() {
-        // Connexion disponible - charger l'application web
+        // Connection available - load the web application
         match APP_URL.parse() {
             Ok(parsed_url) => {
-                log::info!("Connexion détectée, chargement de {}", APP_URL);
+                log::info!("Connection detected, loading {}", APP_URL);
                 (WebviewUrl::External(parsed_url), true)
             }
             Err(e) => {
-                log::error!("Erreur de parsing de l'URL {}: {}", APP_URL, e);
-                // Fallback vers la page d'erreur locale via le protocole Tauri
+                log::error!("URL parsing error for {}: {}", APP_URL, e);
+                // Fallback to local error page via Tauri protocol
                 (
                     WebviewUrl::App("connection-error.html".into()),
                     false,
@@ -200,15 +200,15 @@ fn create_main_window(app: &App) -> tauri::Result<()> {
             }
         }
     } else {
-        // Pas de connexion - afficher la page d'erreur locale
-        log::info!("Pas de connexion détectée, affichage de la page d'erreur locale");
+        // No connection - display local error page
+        log::info!("No connection detected, displaying local error page");
         (
             WebviewUrl::App("connection-error.html".into()),
             false,
         )
     };
 
-    log::info!("Chargement de l'URL : {:?}", url);
+    log::info!("Loading URL: {:?}", url);
 
     let window = WebviewWindowBuilder::new(app, "main", url)
         .title(APP_TITLE)
@@ -230,14 +230,14 @@ fn create_main_window(app: &App) -> tauri::Result<()> {
     Ok(())
 }
 
-/// Vérifie et installe les mises à jour disponibles
+/// Checks and installs available updates
 /// 
-/// Fonction asynchrone appelée automatiquement après le démarrage
+/// Async function called automatically after startup
 async fn perform_update_check<R: Runtime>(app: &AppHandle<R>) {
     let updater = match app.updater() {
         Ok(updater) => updater,
         Err(e) => {
-            log::debug!("Impossible d'initialiser le vérificateur de mises à jour: {}", e);
+            log::debug!("Unable to initialize update checker: {}", e);
             return;
         }
     };
@@ -246,9 +246,9 @@ async fn perform_update_check<R: Runtime>(app: &AppHandle<R>) {
         Ok(Some(update)) => {
             let current_version = app.package_info().version.to_string();
             let dialog_message = format!(
-                "Une nouvelle version est disponible. Voulez-vous l'installer maintenant ?\n\n\
-                Version actuelle: {}\n\
-                Nouvelle version: {}",
+                "A new version is available. Would you like to install it now?\n\n\
+                Current version: {}\n\
+                New version: {}",
                 current_version,
                 &update.version
             );
@@ -258,7 +258,7 @@ async fn perform_update_check<R: Runtime>(app: &AppHandle<R>) {
                 app_for_dialog
                     .dialog()
                     .message(&dialog_message)
-                    .title("Mise à jour disponible")
+                    .title("Update Available")
                     .buttons(tauri_plugin_dialog::MessageDialogButtons::YesNo)
                     .blocking_show()
             })
@@ -267,7 +267,7 @@ async fn perform_update_check<R: Runtime>(app: &AppHandle<R>) {
             let should_update = match dialog_result {
                 Ok(response) => response,
                 Err(e) => {
-                    log::error!("Impossible d'afficher la boîte de dialogue de mise à jour: {}", e);
+                    log::error!("Unable to display update dialog: {}", e);
                     false
                 }
             };
@@ -275,35 +275,35 @@ async fn perform_update_check<R: Runtime>(app: &AppHandle<R>) {
             if should_update {
                 match update.download_and_install(|_, _| {}, || {}).await {
                     Ok(_) => {
-                        log::info!("Mise à jour installée, fermeture de l'application pour finaliser l'installation...");
+                        log::info!("Update installed, closing application to finalize installation...");
                         let app_after_install = app.clone();
                         if let Err(e) = tauri::async_runtime::spawn_blocking(move || {
                             app_after_install
                                 .dialog()
-                                .message("La mise à jour a été installée. L'application va redémarrer pour appliquer les changements.")
-                                .title("Redémarrage nécessaire")
+                                .message("The update has been installed. The application will restart to apply the changes.")
+                                .title("Restart Required")
                                 .blocking_show();
                         })
                         .await
                         {
-                            log::error!("Impossible d'afficher la confirmation de redémarrage: {}", e);
+                            log::error!("Unable to display restart confirmation: {}", e);
                         }
                         std::process::exit(0);
                     }
                     Err(e) => {
-                        log::error!("Échec de l'installation de la mise à jour: {}", e);
+                        log::error!("Update installation failed: {}", e);
                     }
                 }
             }
         }
-        Ok(None) => log::debug!("Aucune mise à jour disponible"),
-        Err(e) => log::debug!("Erreur lors de la vérification des mises à jour: {}", e),
+        Ok(None) => log::debug!("No update available"),
+        Err(e) => log::debug!("Error checking for updates: {}", e),
     }
 }
 
-// === COMMANDES TAURI ===
+// === TAURI COMMANDS ===
 
-/// Stocke un token d'authentification de manière sécurisée
+/// Stores an authentication token securely
 #[command]
 async fn set_token(service: String, username: String, token: String) -> Result<(), String> {
     validate_service(&service)?;
@@ -311,73 +311,73 @@ async fn set_token(service: String, username: String, token: String) -> Result<(
     let normalized_username = normalize_username(&username)?;
 
     let entry = keyring::Entry::new(KEYRING_SERVICE_ID, &normalized_username)
-        .map_err(|e| format!("Impossible de créer l'entrée keyring: {}", e))?;
+        .map_err(|e| format!("Unable to create keyring entry: {}", e))?;
     
     entry
         .set_password(&token)
-        .map_err(|e| format!("Erreur de stockage du token: {:?}", e))
+        .map_err(|e| format!("Token storage error: {:?}", e))
 }
 
-/// Récupère un token d'authentification stocké
+/// Retrieves a stored authentication token
 #[command]
 async fn get_token(service: String, username: String) -> Result<String, String> {
     validate_service(&service)?;
     let normalized_username = normalize_username(&username)?;
 
     let entry = keyring::Entry::new(KEYRING_SERVICE_ID, &normalized_username)
-        .map_err(|e| format!("Impossible de créer l'entrée keyring: {}", e))?;
+        .map_err(|e| format!("Unable to create keyring entry: {}", e))?;
     
     entry
         .get_password()
-        .map_err(|e| format!("Erreur de récupération du token: {:?}", e))
+        .map_err(|e| format!("Token retrieval error: {:?}", e))
 }
 
-/// Recharge l'application en vérifiant à nouveau la connectivité
+/// Reloads the application by checking connectivity again
 /// 
-/// Utilisée par la page d'erreur pour permettre à l'utilisateur de réessayer
+/// Used by the error page to allow the user to retry
 #[command]
 async fn reload_app(app: AppHandle) -> Result<(), String> {
-    // Vérifie la connectivité de manière asynchrone
+    // Check connectivity asynchronously
     let is_online = tauri::async_runtime::spawn_blocking(check_network_connectivity)
         .await
-        .map_err(|e| format!("Erreur de vérification réseau: {}", e))?;
+        .map_err(|e| format!("Network verification error: {}", e))?;
 
     if let Some(window) = app.get_webview_window("main") {
         if is_online {
             let url = APP_URL
                 .parse()
-                .map_err(|e| format!("Erreur de parsing URL: {}", e))?;
+                .map_err(|e| format!("URL parsing error: {}", e))?;
             window
                 .navigate(url)
-                .map_err(|e| format!("Erreur de navigation: {}", e))?;
+                .map_err(|e| format!("Navigation error: {}", e))?;
         } else {
             let error_url = LOCAL_ERROR_PAGE_URL
                 .parse()
-                .map_err(|e| format!("Erreur de parsing URL locale: {}", e))?;
+                .map_err(|e| format!("Local URL parsing error: {}", e))?;
             window
                 .navigate(error_url)
-                .map_err(|e| format!("Erreur de rechargement de page: {}", e))?;
+                .map_err(|e| format!("Page reload error: {}", e))?;
         }
         Ok(())
     } else {
-        Err("Fenêtre principale introuvable".into())
+        Err("Main window not found".into())
     }
 }
 
-// === CONFIGURATION DE L'INTERFACE ===
+// === INTERFACE CONFIGURATION ===
 
-/// Configure l'icône de la barre des tâches et son menu
+/// Configures the system tray icon and its menu
 fn setup_system_tray(app: &App) -> tauri::Result<()> {
-    log::info!("Configuration de l'icône de la barre des tâches...");
+    log::info!("Configuring system tray icon...");
     
-    // Création des éléments du menu
-    let open_item = MenuItemBuilder::with_id("open", "Ouvrir élulib").build(app)?;
-    let settings_item = MenuItemBuilder::with_id("settings", "Paramètres").build(app)?;
-    let update_check_item = MenuItemBuilder::with_id("check_updates", "Vérifier les mises à jour").build(app)?;
-    let quit_item = MenuItemBuilder::with_id("quit", "Quitter élulib").build(app)?;
+    // Create menu items
+    let open_item = MenuItemBuilder::with_id("open", "Open élulib").build(app)?;
+    let settings_item = MenuItemBuilder::with_id("settings", "Settings").build(app)?;
+    let update_check_item = MenuItemBuilder::with_id("check_updates", "Check for Updates").build(app)?;
+    let quit_item = MenuItemBuilder::with_id("quit", "Quit élulib").build(app)?;
     let separator = PredefinedMenuItem::separator(app)?;
     
-    // Construction du menu
+    // Build the menu
     let menu = MenuBuilder::new(app)
         .items(&[
             &open_item,
@@ -388,18 +388,21 @@ fn setup_system_tray(app: &App) -> tauri::Result<()> {
         ])
         .build()?;
 
-    log::info!("Création de l'icône de la barre des tâches...");
+    log::info!("Creating system tray icon...");
     
-    // Chargement de l'icône appropriée selon la plateforme
+    // Load the appropriate icon based on platform
     #[cfg(target_os = "windows")]
     let tray_icon = include_bytes!("../icons/icon.ico");
     #[cfg(not(target_os = "windows"))]
     let tray_icon = include_bytes!("../icons/32x32.png");
     
     let icon = Image::from_bytes(tray_icon)
-        .expect("Impossible de charger l'icône de la barre des tâches");
+        .map_err(|e| {
+            log::error!("Unable to load system tray icon: {}", e);
+            tauri::Error::from(e)
+        })?;
 
-    // Configuration de l'icône avec gestionnaires d'événements
+    // Configure the icon with event handlers
     let _tray = TrayIconBuilder::new()
         .menu(&menu)
         .tooltip("élulib")
@@ -446,13 +449,15 @@ fn setup_system_tray(app: &App) -> tauri::Result<()> {
     Ok(())
 }
 
-// === POINT D'ENTRÉE PRINCIPAL ===
+// === MAIN ENTRY POINT ===
 
-/// Point d'entrée principal de l'application
+/// Main entry point of the application
 /// 
-/// Configure et démarre l'application Tauri avec tous ses composants
+/// Configures and starts the Tauri application with all its components.
+/// This function never returns if the application starts successfully.
+/// In case of build error, the error is logged and the application terminates.
 pub fn run() {
-    log::info!("Démarrage de l'application élulib");
+    log::info!("Starting élulib application");
     
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -465,7 +470,7 @@ pub fn run() {
             setup_system_tray(app)?;
             create_main_window(app)?;
             
-            // Vérification différée des mises à jour
+            // Deferred update check
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 tokio::time::sleep(Duration::from_secs(UPDATE_CHECK_DELAY_SECS)).await;
@@ -476,7 +481,7 @@ pub fn run() {
         })
         .on_window_event(|app, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                // Masquer au lieu de fermer (comportement classique des apps desktop)
+                // Hide instead of closing (typical desktop app behavior)
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.hide();
                 }
@@ -490,7 +495,11 @@ pub fn run() {
             notifications::show_notification
         ])
         .build(tauri::generate_context!())
-        .expect("Erreur lors du démarrage de l'application élulib")
+        .unwrap_or_else(|e| {
+            log::error!("Error starting élulib application: {}", e);
+            eprintln!("Fatal error starting application: {}", e);
+            std::process::exit(1);
+        })
         .run(|_app_handle, event| match event {
             tauri::RunEvent::ExitRequested { api, .. } => {
                 api.prevent_exit();
