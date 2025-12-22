@@ -1,5 +1,7 @@
 # elulib-desktop
 
+[![Tests](https://github.com/elulib/elulib-desktop/actions/workflows/tests.yaml/badge.svg)](https://github.com/elulib/elulib-desktop/actions/workflows/tests.yaml)
+
 ## Installation
 
 Clone repository and install dependencies:
