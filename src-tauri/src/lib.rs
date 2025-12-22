@@ -3,9 +3,9 @@
 //! This application provides a native interface to access élulib.com
 //! with offline management, notifications, and automatic updates.
 
-mod constants;
+pub mod constants;
 mod notifications;
-mod rate_limit;
+pub mod rate_limit;
 
 // === ORGANIZED IMPORTS ===
 
@@ -59,7 +59,8 @@ use rate_limit::RateLimiter;
 /// * `true` if connection is available
 /// * `false` if connection is not available after all retries
 #[cfg_attr(test, allow(dead_code))]
-pub(crate) fn check_network_connectivity() -> bool {
+#[doc(hidden)]
+pub fn check_network_connectivity() -> bool {
     // Try with retries using exponential backoff
     for attempt in 0..=MAX_CONNECTIVITY_RETRIES {
         if attempt > 0 {
@@ -120,7 +121,8 @@ pub(crate) fn check_network_connectivity() -> bool {
 /// * `Ok(())` if the service is authorized
 /// * `Err(String)` if the service is not authorized
 #[cfg_attr(test, allow(dead_code))]
-pub(crate) fn validate_service(service: &str) -> Result<(), String> {
+#[doc(hidden)]
+pub fn validate_service(service: &str) -> Result<(), String> {
     let trimmed = service.trim();
     
     // Enhanced validation: length checks
@@ -154,7 +156,8 @@ pub(crate) fn validate_service(service: &str) -> Result<(), String> {
 /// * `Ok(String)` with the normalized username
 /// * `Err(String)` if the username is invalid
 #[cfg_attr(test, allow(dead_code))]
-pub(crate) fn normalize_username(username: &str) -> Result<String, String> {
+#[doc(hidden)]
+pub fn normalize_username(username: &str) -> Result<String, String> {
     let trimmed = username.trim();
 
     if trimmed.is_empty() {
@@ -191,7 +194,8 @@ pub(crate) fn normalize_username(username: &str) -> Result<String, String> {
 /// * `Ok(())` if the token is valid
 /// * `Err(String)` if the token is invalid
 #[cfg_attr(test, allow(dead_code))]
-pub(crate) fn validate_token(token: &str) -> Result<(), String> {
+#[doc(hidden)]
+pub fn validate_token(token: &str) -> Result<(), String> {
     if token.trim().is_empty() {
         return Err("Token is empty or missing".into());
     }
@@ -692,205 +696,4 @@ pub fn run() {
         });
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
 
-    mod validate_service_tests {
-        use super::*;
-
-        #[test]
-        fn test_validate_service_valid() {
-            assert!(validate_service("com.elulib.desktop").is_ok());
-            assert!(validate_service("  com.elulib.desktop  ").is_ok());
-        }
-
-        #[test]
-        fn test_validate_service_invalid() {
-            assert!(validate_service("invalid.service").is_err());
-            assert!(validate_service("").is_err());
-            assert!(validate_service("com.other.app").is_err());
-            assert!(validate_service("com.elulib.desktop.extra").is_err());
-        }
-
-        #[test]
-        fn test_validate_service_partial_match() {
-            assert!(validate_service("com.elulib").is_err());
-            assert!(validate_service("elulib.desktop").is_err());
-        }
-    }
-
-    mod normalize_username_tests {
-        use super::*;
-
-        #[test]
-        fn test_normalize_username_valid_alphanumeric() {
-            assert_eq!(normalize_username("user123").unwrap(), "user123");
-            assert_eq!(normalize_username("User123").unwrap(), "User123");
-            assert_eq!(normalize_username("123user").unwrap(), "123user");
-        }
-
-        #[test]
-        fn test_normalize_username_valid_with_dots() {
-            assert_eq!(normalize_username("user.name").unwrap(), "user.name");
-            assert_eq!(normalize_username("user.name.test").unwrap(), "user.name.test");
-        }
-
-        #[test]
-        fn test_normalize_username_valid_with_underscores() {
-            assert_eq!(normalize_username("user_name").unwrap(), "user_name");
-            assert_eq!(normalize_username("user_name_test").unwrap(), "user_name_test");
-        }
-
-        #[test]
-        fn test_normalize_username_valid_with_hyphens() {
-            assert_eq!(normalize_username("user-name").unwrap(), "user-name");
-            assert_eq!(normalize_username("user-name-test").unwrap(), "user-name-test");
-        }
-
-        #[test]
-        fn test_normalize_username_valid_with_at_symbol() {
-            assert_eq!(normalize_username("user@example.com").unwrap(), "user@example.com");
-        }
-
-        #[test]
-        fn test_normalize_username_trims_whitespace() {
-            assert_eq!(normalize_username("  user123  ").unwrap(), "user123");
-            assert_eq!(normalize_username("\tuser123\n").unwrap(), "user123");
-            assert_eq!(normalize_username("  user.name  ").unwrap(), "user.name");
-        }
-
-        #[test]
-        fn test_normalize_username_empty_string() {
-            assert!(normalize_username("").is_err());
-        }
-
-        #[test]
-        fn test_normalize_username_whitespace_only() {
-            assert!(normalize_username("   ").is_err());
-            assert!(normalize_username("\t\n").is_err());
-            assert!(normalize_username(" \t \n ").is_err());
-        }
-
-        #[test]
-        fn test_normalize_username_too_long() {
-            let long_username = "a".repeat(129);
-            assert!(normalize_username(&long_username).is_err());
-        }
-
-        #[test]
-        fn test_normalize_username_max_length() {
-            let max_username = "a".repeat(128);
-            assert!(normalize_username(&max_username).is_ok());
-        }
-
-        #[test]
-        fn test_normalize_username_invalid_characters() {
-            assert!(normalize_username("user with spaces").is_err());
-            assert!(normalize_username("user#special").is_err());
-            assert!(normalize_username("user$invalid").is_err());
-            assert!(normalize_username("user%invalid").is_err());
-            assert!(normalize_username("user&invalid").is_err());
-            assert!(normalize_username("user*invalid").is_err());
-            assert!(normalize_username("user(invalid").is_err());
-            assert!(normalize_username("user)invalid").is_err());
-            assert!(normalize_username("user[invalid").is_err());
-            assert!(normalize_username("user]invalid").is_err());
-            assert!(normalize_username("user{invalid").is_err());
-            assert!(normalize_username("user}invalid").is_err());
-        }
-
-        #[test]
-        fn test_normalize_username_mixed_valid_characters() {
-            assert_eq!(
-                normalize_username("user.name_test@example.com").unwrap(),
-                "user.name_test@example.com"
-            );
-            assert_eq!(
-                normalize_username("user-name.test_123@domain.co").unwrap(),
-                "user-name.test_123@domain.co"
-            );
-        }
-    }
-
-    mod validate_token_tests {
-        use super::*;
-
-        #[test]
-        fn test_validate_token_valid() {
-            assert!(validate_token("token123").is_ok());
-            assert!(validate_token("a").is_ok());
-            assert!(validate_token("very-long-token-string").is_ok());
-        }
-
-        #[test]
-        fn test_validate_token_with_whitespace() {
-            assert!(validate_token("  token  ").is_ok());
-            assert!(validate_token("\ttoken\n").is_ok());
-        }
-
-        #[test]
-        fn test_validate_token_max_length() {
-            let max_token = "a".repeat(4096);
-            assert!(validate_token(&max_token).is_ok());
-        }
-
-        #[test]
-        fn test_validate_token_empty_string() {
-            assert!(validate_token("").is_err());
-        }
-
-        #[test]
-        fn test_validate_token_whitespace_only() {
-            assert!(validate_token("   ").is_err());
-            assert!(validate_token("\t\n").is_err());
-            assert!(validate_token(" \t \n ").is_err());
-        }
-
-        #[test]
-        fn test_validate_token_too_long() {
-            let long_token = "a".repeat(4097);
-            assert!(validate_token(&long_token).is_err());
-        }
-
-        #[test]
-        fn test_validate_token_special_characters() {
-            // Tokens can contain any characters, including special ones
-            assert!(validate_token("token!@#$%^&*()").is_ok());
-            assert!(validate_token("token with spaces").is_ok());
-            assert!(validate_token("token\nwith\nnewlines").is_ok());
-            assert!(validate_token("token\twith\ttabs").is_ok());
-        }
-
-        #[test]
-        fn test_validate_token_unicode() {
-            assert!(validate_token("token-émoji-🚀").is_ok());
-            assert!(validate_token("token-中文").is_ok());
-        }
-    }
-
-    mod check_network_connectivity_tests {
-        use super::*;
-
-        #[test]
-        fn test_check_network_connectivity_no_panic() {
-            // This test just ensures the function doesn't panic
-            // Actual result depends on network availability
-            let _result = check_network_connectivity();
-        }
-
-        #[test]
-        fn test_check_network_connectivity_returns_boolean() {
-            let result = check_network_connectivity();
-            assert!(result == true || result == false);
-        }
-
-        #[test]
-        fn test_check_network_connectivity_idempotent() {
-            // Multiple calls should not panic
-            let _result1 = check_network_connectivity();
-            let _result2 = check_network_connectivity();
-            let _result3 = check_network_connectivity();
-        }
-    }
-}

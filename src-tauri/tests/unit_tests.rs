@@ -1,28 +1,512 @@
-//! Tests d'intégration pour les commandes Tauri
+//! Unit tests for the élulib application
 //!
-//! Ces tests vérifient le comportement des commandes publiques.
-//! Note: Les fonctions utilitaires internes (validate_service, normalize_username, etc.)
-//! sont testées dans lib.rs via les tests unitaires.
+//! These tests verify the behavior of individual functions and modules.
+//! All unit tests are consolidated here for better organization.
 
-#[cfg(test)]
+use elulib_desktop::{
+    check_network_connectivity, normalize_username, validate_service, validate_token,
+};
+
+// Command structure tests
 mod command_structure_tests {
-    // Tests de structure pour vérifier que les commandes sont correctement définies
-    // Les tests fonctionnels nécessiteraient un environnement Tauri mocké
+    // Structure tests to verify commands are correctly defined
+    // Functional tests would require a mocked Tauri environment
     
     #[test]
     fn test_command_module_structure() {
-        // Vérification que le module peut être compilé
-        // Les commandes réelles sont testées via les tests unitaires dans lib.rs
+        // Verify that the module can be compiled
+        // Real commands are tested via unit tests
         assert!(true);
     }
 
     #[test]
     fn test_commands_available() {
-        // Documentation des commandes disponibles:
-        // - set_token: Stocke un token d'authentification
-        // - get_token: Récupère un token d'authentification
-        // - reload_app: Recharge l'application
-        // - show_notification: Affiche une notification système
+        // Documentation of available commands:
+        // - set_token: Stores an authentication token
+        // - get_token: Retrieves an authentication token
+        // - reload_app: Reloads the application
+        // - show_notification: Displays a system notification
         assert!(true);
+    }
+    
+    #[test]
+    fn test_command_names_are_valid() {
+        // Command names should be valid identifiers
+        let commands = vec!["set_token", "get_token", "reload_app", "show_notification"];
+        for cmd in commands {
+            assert!(!cmd.is_empty());
+            assert!(cmd.len() > 0);
+            assert!(!cmd.contains(" ")); // No spaces in command names
+        }
+    }
+}
+
+// Validation function tests
+mod validate_service_tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_service_valid() {
+        assert!(validate_service("com.elulib.desktop").is_ok());
+        assert!(validate_service("  com.elulib.desktop  ").is_ok());
+    }
+
+    #[test]
+    fn test_validate_service_invalid() {
+        assert!(validate_service("invalid.service").is_err());
+        assert!(validate_service("").is_err());
+        assert!(validate_service("com.other.app").is_err());
+        assert!(validate_service("com.elulib.desktop.extra").is_err());
+    }
+
+    #[test]
+    fn test_validate_service_partial_match() {
+        assert!(validate_service("com.elulib").is_err());
+        assert!(validate_service("elulib.desktop").is_err());
+    }
+
+    #[test]
+    fn test_validate_service_null_byte_detection() {
+        // Service with null byte should be rejected
+        assert!(validate_service("com.elulib.desktop\0").is_err());
+        assert!(validate_service("com.elulib\0.desktop").is_err());
+    }
+
+    #[test]
+    fn test_validate_service_control_characters() {
+        // Service with newline in middle should be rejected (not trimmed)
+        assert!(validate_service("com.elulib\n.desktop").is_err());
+        assert!(validate_service("com.elulib\r.desktop").is_err());
+        // Note: trailing newlines are trimmed, so they don't cause errors
+        // This is acceptable as trimming is part of normalization
+    }
+
+    #[test]
+    fn test_validate_service_length_limits() {
+        // Too short
+        assert!(validate_service("ab").is_err());
+        assert!(validate_service("a").is_err());
+        
+        // Minimum length (3 characters)
+        assert!(validate_service("abc").is_err()); // Wrong service, but length OK
+        
+        // Maximum length (256 characters)
+        let max_service = "a".repeat(256);
+        let _ = validate_service(&max_service); // May fail for wrong service, but length OK
+        
+        // Over maximum length
+        let too_long = "a".repeat(257);
+        assert!(validate_service(&too_long).is_err());
+    }
+
+    #[test]
+    fn test_validate_service_injection_attempts() {
+        // Common injection patterns
+        assert!(validate_service("com.elulib.desktop'; DROP TABLE--").is_err());
+        assert!(validate_service("com.elulib.desktop<script>").is_err());
+    }
+}
+
+mod normalize_username_tests {
+    use super::*;
+
+    #[test]
+    fn test_normalize_username_valid_alphanumeric() {
+        assert_eq!(normalize_username("user123").unwrap(), "user123");
+        assert_eq!(normalize_username("User123").unwrap(), "User123");
+        assert_eq!(normalize_username("123user").unwrap(), "123user");
+    }
+
+    #[test]
+    fn test_normalize_username_valid_with_dots() {
+        assert_eq!(normalize_username("user.name").unwrap(), "user.name");
+        assert_eq!(normalize_username("user.name.test").unwrap(), "user.name.test");
+    }
+
+    #[test]
+    fn test_normalize_username_valid_with_underscores() {
+        assert_eq!(normalize_username("user_name").unwrap(), "user_name");
+        assert_eq!(normalize_username("user_name_test").unwrap(), "user_name_test");
+    }
+
+    #[test]
+    fn test_normalize_username_valid_with_hyphens() {
+        assert_eq!(normalize_username("user-name").unwrap(), "user-name");
+        assert_eq!(normalize_username("user-name-test").unwrap(), "user-name-test");
+    }
+
+    #[test]
+    fn test_normalize_username_valid_with_at_symbol() {
+        assert_eq!(normalize_username("user@example.com").unwrap(), "user@example.com");
+    }
+
+    #[test]
+    fn test_normalize_username_trims_whitespace() {
+        assert_eq!(normalize_username("  user123  ").unwrap(), "user123");
+        assert_eq!(normalize_username("\tuser123\n").unwrap(), "user123");
+        assert_eq!(normalize_username("  user.name  ").unwrap(), "user.name");
+    }
+
+    #[test]
+    fn test_normalize_username_empty_string() {
+        assert!(normalize_username("").is_err());
+    }
+
+    #[test]
+    fn test_normalize_username_whitespace_only() {
+        assert!(normalize_username("   ").is_err());
+        assert!(normalize_username("\t\n").is_err());
+        assert!(normalize_username(" \t \n ").is_err());
+    }
+
+    #[test]
+    fn test_normalize_username_too_long() {
+        let long_username = "a".repeat(129);
+        assert!(normalize_username(&long_username).is_err());
+    }
+
+    #[test]
+    fn test_normalize_username_max_length() {
+        let max_username = "a".repeat(128);
+        assert!(normalize_username(&max_username).is_ok());
+    }
+
+    #[test]
+    fn test_normalize_username_invalid_characters() {
+        assert!(normalize_username("user with spaces").is_err());
+        assert!(normalize_username("user#special").is_err());
+        assert!(normalize_username("user$invalid").is_err());
+        assert!(normalize_username("user%invalid").is_err());
+        assert!(normalize_username("user&invalid").is_err());
+        assert!(normalize_username("user*invalid").is_err());
+        assert!(normalize_username("user(invalid").is_err());
+        assert!(normalize_username("user)invalid").is_err());
+        assert!(normalize_username("user[invalid").is_err());
+        assert!(normalize_username("user]invalid").is_err());
+        assert!(normalize_username("user{invalid").is_err());
+        assert!(normalize_username("user}invalid").is_err());
+    }
+
+    #[test]
+    fn test_normalize_username_mixed_valid_characters() {
+        assert_eq!(
+            normalize_username("user.name_test@example.com").unwrap(),
+            "user.name_test@example.com"
+        );
+        assert_eq!(
+            normalize_username("user-name.test_123@domain.co").unwrap(),
+            "user-name.test_123@domain.co"
+        );
+    }
+
+    #[test]
+    fn test_normalize_username_null_byte_detection() {
+        // Username with null byte should be rejected
+        assert!(normalize_username("user\0name").is_err());
+        assert!(normalize_username("\0user").is_err());
+        assert!(normalize_username("user\0").is_err());
+    }
+
+    #[test]
+    fn test_normalize_username_control_characters() {
+        // Username with control characters should be rejected
+        assert!(normalize_username("user\nname").is_err());
+        assert!(normalize_username("user\rname").is_err());
+        assert!(normalize_username("user\tname").is_err());
+    }
+
+    #[test]
+    fn test_normalize_username_injection_attempts() {
+        // SQL injection attempts
+        assert!(normalize_username("user'; DROP TABLE--").is_err());
+        assert!(normalize_username("user OR 1=1--").is_err());
+        
+        // Command injection attempts
+        assert!(normalize_username("user; rm -rf /").is_err());
+        assert!(normalize_username("user && cat /etc/passwd").is_err());
+        
+        // Path traversal attempts
+        assert!(normalize_username("../user").is_err());
+        assert!(normalize_username("..\\user").is_err());
+    }
+}
+
+mod validate_token_tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_token_valid() {
+        assert!(validate_token("token123").is_ok());
+        assert!(validate_token("a").is_ok());
+        assert!(validate_token("very-long-token-string").is_ok());
+    }
+
+    #[test]
+    fn test_validate_token_with_whitespace() {
+        assert!(validate_token("  token  ").is_ok());
+        assert!(validate_token("\ttoken\n").is_ok());
+    }
+
+    #[test]
+    fn test_validate_token_max_length() {
+        let max_token = "a".repeat(4096);
+        assert!(validate_token(&max_token).is_ok());
+    }
+
+    #[test]
+    fn test_validate_token_empty_string() {
+        assert!(validate_token("").is_err());
+    }
+
+    #[test]
+    fn test_validate_token_whitespace_only() {
+        assert!(validate_token("   ").is_err());
+        assert!(validate_token("\t\n").is_err());
+        assert!(validate_token(" \t \n ").is_err());
+    }
+
+    #[test]
+    fn test_validate_token_too_long() {
+        let long_token = "a".repeat(4097);
+        assert!(validate_token(&long_token).is_err());
+    }
+
+    #[test]
+    fn test_validate_token_special_characters() {
+        // Tokens can contain any characters, including special ones
+        assert!(validate_token("token!@#$%^&*()").is_ok());
+        assert!(validate_token("token with spaces").is_ok());
+        assert!(validate_token("token\nwith\nnewlines").is_ok());
+        assert!(validate_token("token\twith\ttabs").is_ok());
+    }
+
+    #[test]
+    fn test_validate_token_unicode() {
+        assert!(validate_token("token-émoji-🚀").is_ok());
+        assert!(validate_token("token-中文").is_ok());
+    }
+
+    #[test]
+    fn test_validate_token_null_byte_detection() {
+        // Token with null byte should be rejected
+        assert!(validate_token("token\0value").is_err());
+        assert!(validate_token("\0token").is_err());
+        assert!(validate_token("token\0").is_err());
+    }
+
+    #[test]
+    fn test_validate_token_allows_valid_special_characters() {
+        // Tokens should allow special characters (but not null bytes)
+        assert!(validate_token("token!@#$%^&*()").is_ok());
+        assert!(validate_token("token with spaces").is_ok());
+        assert!(validate_token("token\nwith\nnewlines").is_ok());
+        assert!(validate_token("token\twith\ttabs").is_ok());
+    }
+}
+
+mod check_network_connectivity_tests {
+    use super::*;
+
+    #[test]
+    fn test_check_network_connectivity_no_panic() {
+        // This test just ensures the function doesn't panic
+        // Actual result depends on network availability
+        let _result = check_network_connectivity();
+    }
+
+    #[test]
+    fn test_check_network_connectivity_returns_boolean() {
+        let result = check_network_connectivity();
+        assert!(result == true || result == false);
+    }
+
+    #[test]
+    fn test_check_network_connectivity_idempotent() {
+        // Multiple calls should not panic
+        let _result1 = check_network_connectivity();
+        let _result2 = check_network_connectivity();
+        let _result3 = check_network_connectivity();
+    }
+}
+
+// Notification tests
+mod notification_tests {
+    use tauri::AppHandle;
+
+    #[test]
+    fn test_show_notification_function_exists() {
+        // Test that the function signature is correct
+        // Actual testing would require a mock AppHandle
+        assert!(true);
+    }
+
+    #[test]
+    fn test_notification_parameters() {
+        // Test that the function accepts the correct parameters
+        // - title: String
+        // - body: Option<String>
+        // This is a compile-time test
+        fn _test_signature(
+            _app_handle: AppHandle,
+            _title: String,
+            _body: Option<String>,
+        ) -> Result<(), String> {
+            Ok(())
+        }
+        assert!(true);
+    }
+}
+
+// Rate limiting tests
+mod rate_limit_tests {
+    use elulib_desktop::rate_limit::RateLimiter;
+    use std::thread;
+    use std::time::Duration;
+
+    #[test]
+    fn test_rate_limiter_creation() {
+        let limiter = RateLimiter::new();
+        assert!(limiter.check_rate_limit("test_op", 10, 60).is_ok());
+    }
+
+    #[test]
+    fn test_rate_limiter_allows_requests_within_limit() {
+        let limiter = RateLimiter::new();
+        
+        // Should allow requests up to the limit
+        for i in 0..10 {
+            assert!(
+                limiter.check_rate_limit("test_op", 10, 60).is_ok(),
+                "Request {} should be allowed",
+                i + 1
+            );
+        }
+    }
+
+    #[test]
+    fn test_rate_limiter_blocks_requests_over_limit() {
+        let limiter = RateLimiter::new();
+        
+        // Make max requests
+        for _ in 0..10 {
+            assert!(limiter.check_rate_limit("test_op", 10, 60).is_ok());
+        }
+        
+        // Next request should be blocked
+        let result = limiter.check_rate_limit("test_op", 10, 60);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Rate limit exceeded"));
+    }
+
+    #[test]
+    fn test_rate_limiter_separate_operations() {
+        let limiter = RateLimiter::new();
+        
+        // Fill up limit for one operation
+        for _ in 0..10 {
+            assert!(limiter.check_rate_limit("op1", 10, 60).is_ok());
+        }
+        
+        // Different operation should still work
+        assert!(limiter.check_rate_limit("op2", 10, 60).is_ok());
+        assert!(limiter.check_rate_limit("op2", 10, 60).is_ok());
+    }
+
+    #[test]
+    fn test_rate_limiter_window_expiry() {
+        let limiter = RateLimiter::new();
+        let max_requests = 5;
+        let window_seconds = 1;
+        
+        // Fill up the limit
+        for _ in 0..max_requests {
+            assert!(limiter.check_rate_limit("test_op", max_requests, window_seconds).is_ok());
+        }
+        
+        // Should be blocked
+        assert!(limiter.check_rate_limit("test_op", max_requests, window_seconds).is_err());
+        
+        // Wait for window to expire
+        thread::sleep(Duration::from_secs(window_seconds + 1));
+        
+        // Should be allowed again
+        assert!(limiter.check_rate_limit("test_op", max_requests, window_seconds).is_ok());
+    }
+
+    #[test]
+    fn test_rate_limiter_error_message_format() {
+        let limiter = RateLimiter::new();
+        
+        // Fill up limit
+        for _ in 0..5 {
+            assert!(limiter.check_rate_limit("test_op", 5, 30).is_ok());
+        }
+        
+        let error = limiter.check_rate_limit("test_op", 5, 30).unwrap_err();
+        assert!(error.contains("Rate limit exceeded"));
+        assert!(error.contains("5")); // max_requests
+        assert!(error.contains("30")); // window_seconds
+        assert!(error.contains("test_op")); // operation name
+    }
+
+    #[test]
+    fn test_rate_limiter_concurrent_access() {
+        let limiter = RateLimiter::new();
+        let limiter_clone = limiter.clone();
+        
+        // Test that rate limiter is thread-safe
+        let handle = thread::spawn(move || {
+            for _ in 0..5 {
+                limiter_clone.check_rate_limit("concurrent_op", 10, 60).unwrap();
+            }
+        });
+        
+        // Main thread also makes requests
+        for _ in 0..5 {
+            assert!(limiter.check_rate_limit("concurrent_op", 10, 60).is_ok());
+        }
+        
+        handle.join().unwrap();
+        
+        // Total should be 10, so next should be blocked
+        assert!(limiter.check_rate_limit("concurrent_op", 10, 60).is_err());
+    }
+
+    #[test]
+    fn test_rate_limiter_cleanup() {
+        let limiter = RateLimiter::new();
+        
+        // Make some requests
+        for _ in 0..3 {
+            assert!(limiter.check_rate_limit("cleanup_test", 10, 1).is_ok());
+        }
+        
+        // Wait for window to expire
+        thread::sleep(Duration::from_secs(2));
+        
+        // Cleanup should remove old entries
+        limiter.cleanup();
+        
+        // Should be able to make requests again
+        assert!(limiter.check_rate_limit("cleanup_test", 10, 1).is_ok());
+    }
+
+    #[test]
+    fn test_rate_limiter_zero_max_requests() {
+        let limiter = RateLimiter::new();
+        
+        // With zero max requests, first request should fail
+        assert!(limiter.check_rate_limit("zero_test", 0, 60).is_err());
+    }
+
+    #[test]
+    fn test_rate_limiter_single_request_limit() {
+        let limiter = RateLimiter::new();
+        
+        // First request should succeed
+        assert!(limiter.check_rate_limit("single_test", 1, 60).is_ok());
+        
+        // Second request should fail
+        assert!(limiter.check_rate_limit("single_test", 1, 60).is_err());
     }
 }

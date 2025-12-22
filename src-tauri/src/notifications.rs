@@ -59,30 +59,3 @@ pub async fn show_notification(
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_show_notification_function_exists() {
-        // Test that the function signature is correct
-        // Actual testing would require a mock AppHandle
-        assert!(true);
-    }
-
-    #[test]
-    fn test_notification_parameters() {
-        // Test that the function accepts the correct parameters
-        // - title: String
-        // - body: Option<String>
-        // This is a compile-time test
-        fn _test_signature(
-            _app_handle: AppHandle,
-            _title: String,
-            _body: Option<String>,
-        ) -> Result<(), String> {
-            Ok(())
-        }
-        assert!(true);
-    }
-}
