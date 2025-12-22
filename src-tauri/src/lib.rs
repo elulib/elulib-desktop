@@ -13,7 +13,7 @@ use tauri::{
     menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem},
     tray::{TrayIconBuilder, TrayIconEvent, MouseButton, MouseButtonState},
     window::Color,
-    App, AppHandle, Manager, Runtime, TitleBarStyle, WebviewUrl, WebviewWindowBuilder,
+    App, AppHandle, Manager, Runtime, Theme, WebviewUrl, WebviewWindowBuilder,
     image::Image,
 };
 
@@ -210,9 +210,8 @@ fn create_main_window(app: &App) -> tauri::Result<()> {
 
     log::info!("Chargement de l'URL : {:?}", url);
 
-    WebviewWindowBuilder::new(app, "main", url)
+    let window = WebviewWindowBuilder::new(app, "main", url)
         .title(APP_TITLE)
-        .title_bar_style(TitleBarStyle::Visible)
         .background_color(Color(255, 255, 255, 255))
         .inner_size(WINDOW_WIDTH, WINDOW_HEIGHT)
         .min_inner_size(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT)
@@ -221,6 +220,12 @@ fn create_main_window(app: &App) -> tauri::Result<()> {
         .decorations(true)
         .prevent_overflow()
         .build()?;
+
+    // Set theme to Light to ensure title bar text is readable in dark mode
+    // This forces light theme for the title bar, making text visible
+    if let Err(e) = window.set_theme(Some(Theme::Light)) {
+        log::warn!("Could not set window theme: {}", e);
+    }
 
     Ok(())
 }
