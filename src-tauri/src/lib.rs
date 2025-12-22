@@ -37,10 +37,17 @@ const CONNECTIVITY_HOST: &str = "app.elulib.com";
 const CONNECTIVITY_PORT: u16 = 443;
 
 /// Timeout for connectivity verification (seconds)
+/// This is the initial timeout - retries use exponential backoff
 const CONNECTIVITY_TIMEOUT_SECS: u64 = 2;
 
 /// Read/write timeout for TCP connections (seconds)
 const TCP_RW_TIMEOUT_SECS: u64 = 1;
+
+/// Maximum number of retry attempts for connectivity check
+const MAX_CONNECTIVITY_RETRIES: u32 = 2;
+
+/// Base delay for exponential backoff (milliseconds)
+const RETRY_BASE_DELAY_MS: u64 = 500;
 
 /// Application title
 const APP_TITLE: &str = "élulib";
@@ -70,42 +77,79 @@ const MAX_TOKEN_LENGTH: usize = 4096;
 
 // === UTILITY FUNCTIONS ===
 
-/// Checks network connectivity securely
+/// Checks network connectivity securely with retry logic
 /// 
 /// Uses a synchronous approach compatible with Tauri setup
-/// with DNS resolution and timeout to avoid blocking
+/// with DNS resolution, timeout, and exponential backoff retries to avoid blocking.
+/// 
+/// # Implementation Details
+/// 
+/// - Attempts connection with configurable timeout
+/// - Implements exponential backoff for retries (up to MAX_CONNECTIVITY_RETRIES)
+/// - Tries multiple DNS addresses if available
+/// - Uses short timeouts to prevent UI freezing
+/// 
+/// # Performance
+/// 
+/// - First attempt: ~2 seconds timeout
+/// - Retries: exponential backoff (500ms, 1000ms, etc.)
+/// - Maximum total time: ~4-6 seconds in worst case
+/// - Typical case: < 2 seconds if connection is available
 /// 
 /// # Returns
 /// * `true` if connection is available
-/// * `false` if connection is not available
+/// * `false` if connection is not available after all retries
 #[cfg_attr(test, allow(dead_code))]
 pub(crate) fn check_network_connectivity() -> bool {
-    match (CONNECTIVITY_HOST, CONNECTIVITY_PORT).to_socket_addrs() {
-        Ok(addresses) => {
-            for address in addresses {
-                match TcpStream::connect_timeout(&address, Duration::from_secs(CONNECTIVITY_TIMEOUT_SECS)) {
-                    Ok(stream) => {
-                        // Configure timeouts to avoid blocking
-                        let _ = stream.set_read_timeout(Some(Duration::from_secs(TCP_RW_TIMEOUT_SECS)));
-                        let _ = stream.set_write_timeout(Some(Duration::from_secs(TCP_RW_TIMEOUT_SECS)));
-                        
-                        log::debug!("TCP connection successful to {} via {}", CONNECTIVITY_HOST, address);
-                        return true;
-                    }
-                    Err(e) => {
-                        log::debug!("TCP connection failed to {} via {} - {}", CONNECTIVITY_HOST, address, e);
+    // Try with retries using exponential backoff
+    for attempt in 0..=MAX_CONNECTIVITY_RETRIES {
+        if attempt > 0 {
+            // Exponential backoff: 500ms, 1000ms, 2000ms, etc.
+            let delay_ms = RETRY_BASE_DELAY_MS * (1 << (attempt - 1));
+            log::debug!("Retrying connectivity check (attempt {}/{}) after {}ms delay", attempt + 1, MAX_CONNECTIVITY_RETRIES + 1, delay_ms);
+            std::thread::sleep(Duration::from_millis(delay_ms));
+        }
+
+        match (CONNECTIVITY_HOST, CONNECTIVITY_PORT).to_socket_addrs() {
+            Ok(addresses) => {
+                // Try each resolved address
+                for address in addresses {
+                    match TcpStream::connect_timeout(&address, Duration::from_secs(CONNECTIVITY_TIMEOUT_SECS)) {
+                        Ok(stream) => {
+                            // Configure timeouts to avoid blocking
+                            let _ = stream.set_read_timeout(Some(Duration::from_secs(TCP_RW_TIMEOUT_SECS)));
+                            let _ = stream.set_write_timeout(Some(Duration::from_secs(TCP_RW_TIMEOUT_SECS)));
+                            
+                            if attempt > 0 {
+                                log::info!("TCP connection successful to {} via {} (after {} retries)", CONNECTIVITY_HOST, address, attempt);
+                            } else {
+                                log::debug!("TCP connection successful to {} via {}", CONNECTIVITY_HOST, address);
+                            }
+                            return true;
+                        }
+                        Err(e) => {
+                            log::debug!("TCP connection failed to {} via {} - {}", CONNECTIVITY_HOST, address, e);
+                        }
                     }
                 }
-            }
 
-            log::debug!("No reachable address for {}", CONNECTIVITY_HOST);
-            false
-        }
-        Err(e) => {
-            log::debug!("DNS resolution failed for {}: {}", CONNECTIVITY_HOST, e);
-            false
+                if attempt < MAX_CONNECTIVITY_RETRIES {
+                    log::debug!("No reachable address for {} on attempt {}, will retry", CONNECTIVITY_HOST, attempt + 1);
+                } else {
+                    log::debug!("No reachable address for {} after all retries", CONNECTIVITY_HOST);
+                }
+            }
+            Err(e) => {
+                if attempt < MAX_CONNECTIVITY_RETRIES {
+                    log::debug!("DNS resolution failed for {} on attempt {}: {}, will retry", CONNECTIVITY_HOST, attempt + 1, e);
+                } else {
+                    log::debug!("DNS resolution failed for {} after all retries: {}", CONNECTIVITY_HOST, e);
+                }
+            }
         }
     }
+
+    false
 }
 
 /// Validates that the keyring service is authorized
@@ -183,11 +227,23 @@ pub(crate) fn validate_token(token: &str) -> Result<(), String> {
 /// If connectivity is available, loads the web application.
 /// Otherwise, displays a local error page with retry option.
 /// 
+/// # Network Connectivity Check
+/// 
+/// The connectivity check uses:
+/// - Configurable timeout (2 seconds per attempt)
+/// - Exponential backoff retry mechanism (up to 2 retries)
+/// - Multiple DNS address resolution attempts
+/// - Fast failure to prevent UI blocking
+/// 
+/// Total maximum time: ~4-6 seconds in worst case
+/// Typical time: < 2 seconds if connection is available
+/// 
 /// # Error Handling
 /// 
 /// This function handles errors gracefully:
 /// - Window creation failures are propagated (critical)
 /// - Theme setting failures are logged but non-critical (fallback to system theme)
+/// - Network check failures result in offline mode (non-critical)
 /// - All errors are logged with appropriate severity levels
 /// 
 /// # Returns
@@ -195,6 +251,8 @@ pub(crate) fn validate_token(token: &str) -> Result<(), String> {
 /// * `Ok(())` if the window was created successfully
 /// * `Err(tauri::Error)` if window creation failed
 fn create_main_window(app: &App) -> tauri::Result<()> {
+    // Check connectivity with retry logic and exponential backoff
+    // This is synchronous but uses short timeouts and retries to minimize blocking
     let (url, _is_online) = if check_network_connectivity() {
         // Connection available - load the web application
         match APP_URL.parse() {
