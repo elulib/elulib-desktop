@@ -2,8 +2,6 @@
 
 ## Installation
 
-### Local
-
 Clone repository and install dependencies:
 ```bash
 git clone https://github.com/elulib/elulib-desktop.git
@@ -22,6 +20,23 @@ rustup target add x86_64-pc-windows-msvc aarch64-apple-darwin x86_64-apple-darwi
 Run the app:
 ```bash
 npm run tauri dev
+```
+
+## Testing
+
+Run all tests:
+```bash
+npm test
+```
+
+Run individual tests:
+```bash
+# Run all tests
+npm run test:rust
+# Run unit tests
+npm run test:rust:unit
+# Run integration tests
+npm run test:rust:integration
 ```
 
 ### Building

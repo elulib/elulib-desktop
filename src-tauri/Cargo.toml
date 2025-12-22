@@ -35,3 +35,6 @@ tauri-plugin-opener = "2"
 
 [features]
 default = ["tauri/custom-protocol"]
+
+[dev-dependencies]
+tokio-test = "0.4"

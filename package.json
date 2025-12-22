@@ -7,7 +7,11 @@
     "sync-version": "node scripts/sync-version.js",
     "build:win": "npm run sync-version && cargo tauri build --target x86_64-pc-windows-msvc",
     "build:mac": "npm run sync-version && cargo tauri build --target aarch64-apple-darwin",
-    "build:mac-intel": "npm run sync-version && cargo tauri build --target x86_64-apple-darwin"
+    "build:mac-intel": "npm run sync-version && cargo tauri build --target x86_64-apple-darwin",
+    "test": "npm run test:rust",
+    "test:rust": "cd src-tauri && cargo test",
+    "test:rust:unit": "cd src-tauri && cargo test --lib",
+    "test:rust:integration": "cd src-tauri && cargo test --test '*'"
   },
   "author": "elulib",
   "license": "MIT",
