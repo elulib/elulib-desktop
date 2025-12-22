@@ -182,6 +182,18 @@ pub(crate) fn validate_token(token: &str) -> Result<(), String> {
 /// 
 /// If connectivity is available, loads the web application.
 /// Otherwise, displays a local error page with retry option.
+/// 
+/// # Error Handling
+/// 
+/// This function handles errors gracefully:
+/// - Window creation failures are propagated (critical)
+/// - Theme setting failures are logged but non-critical (fallback to system theme)
+/// - All errors are logged with appropriate severity levels
+/// 
+/// # Returns
+/// 
+/// * `Ok(())` if the window was created successfully
+/// * `Err(tauri::Error)` if window creation failed
 fn create_main_window(app: &App) -> tauri::Result<()> {
     let (url, _is_online) = if check_network_connectivity() {
         // Connection available - load the web application
@@ -223,8 +235,29 @@ fn create_main_window(app: &App) -> tauri::Result<()> {
 
     // Set theme to Light to ensure title bar text is readable in dark mode
     // This forces light theme for the title bar, making text visible
-    if let Err(e) = window.set_theme(Some(Theme::Light)) {
-        log::warn!("Could not set window theme: {}", e);
+    // 
+    // Note: Theme setting failure is non-critical because:
+    // 1. The window will fall back to system default theme
+    // 2. The application remains fully functional
+    // 3. Title bar text may be less readable in dark mode, but the app still works
+    // 4. This is a platform-specific feature that may not be available on all systems
+    match window.set_theme(Some(Theme::Light)) {
+        Ok(_) => {
+            log::debug!("Window theme set to Light successfully");
+        }
+        Err(e) => {
+            // Log as warning since this is non-critical
+            // The window will use system default theme as fallback
+            log::warn!(
+                "Could not set window theme to Light (non-critical): {}. \
+                Window will use system default theme as fallback.",
+                e
+            );
+            // Note: We don't check the current theme here because:
+            // 1. The theme() method may not be available on all platforms
+            // 2. The fallback behavior is acceptable (system default)
+            // 3. The application remains fully functional
+        }
     }
 
     Ok(())
