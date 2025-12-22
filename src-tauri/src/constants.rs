@@ -51,3 +51,15 @@ pub const MAX_USERNAME_LENGTH: usize = 128;
 /// Maximum allowed size for a stored token
 pub const MAX_TOKEN_LENGTH: usize = 4096;
 
+/// Rate limiting: Maximum number of token operations per time window
+pub const RATE_LIMIT_MAX_REQUESTS: u32 = 10;
+
+/// Rate limiting: Time window in seconds for token operations
+pub const RATE_LIMIT_WINDOW_SECS: u64 = 60;
+
+/// Minimum length for service identifier (additional validation)
+pub const MIN_SERVICE_LENGTH: usize = 3;
+
+/// Maximum length for service identifier (additional validation)
+pub const MAX_SERVICE_LENGTH: usize = 256;
+

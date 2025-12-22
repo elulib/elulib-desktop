@@ -5,6 +5,7 @@
 
 mod constants;
 mod notifications;
+mod rate_limit;
 
 // === ORGANIZED IMPORTS ===
 
@@ -24,10 +25,14 @@ use tauri_plugin_updater::UpdaterExt;
 
 // Network and async utilities
 use std::net::{TcpStream, ToSocketAddrs};
+use std::sync::OnceLock;
 use std::time::Duration;
 
 // Constants
 use constants::*;
+
+// Rate limiting
+use rate_limit::RateLimiter;
 
 // === UTILITY FUNCTIONS ===
 
@@ -116,7 +121,24 @@ pub(crate) fn check_network_connectivity() -> bool {
 /// * `Err(String)` if the service is not authorized
 #[cfg_attr(test, allow(dead_code))]
 pub(crate) fn validate_service(service: &str) -> Result<(), String> {
-    if service.trim() == KEYRING_SERVICE_ID {
+    let trimmed = service.trim();
+    
+    // Enhanced validation: length checks
+    if trimmed.len() < MIN_SERVICE_LENGTH {
+        return Err(format!("Service identifier too short (minimum {} characters)", MIN_SERVICE_LENGTH));
+    }
+    
+    if trimmed.len() > MAX_SERVICE_LENGTH {
+        return Err(format!("Service identifier too long (maximum {} characters)", MAX_SERVICE_LENGTH));
+    }
+    
+    // Check for potential injection patterns (basic sanitization)
+    if trimmed.contains('\0') || trimmed.contains('\n') || trimmed.contains('\r') {
+        return Err("Service identifier contains invalid characters".into());
+    }
+    
+    // Authorized service check
+    if trimmed == KEYRING_SERVICE_ID {
         Ok(())
     } else {
         Err("Service not authorized for keyring".into())
@@ -141,6 +163,11 @@ pub(crate) fn normalize_username(username: &str) -> Result<String, String> {
 
     if trimmed.len() > MAX_USERNAME_LENGTH {
         return Err("Username too long".into());
+    }
+
+    // Enhanced validation: check for null bytes and control characters
+    if trimmed.contains('\0') || trimmed.chars().any(|c| c.is_control() && c != '\t' && c != '\n' && c != '\r') {
+        return Err("Username contains invalid control characters".into());
     }
 
     if !trimmed
@@ -173,7 +200,49 @@ pub(crate) fn validate_token(token: &str) -> Result<(), String> {
         return Err("Token too large".into());
     }
 
+    // Enhanced validation: check for null bytes (potential injection)
+    if token.contains('\0') {
+        return Err("Token contains invalid null bytes".into());
+    }
+
     Ok(())
+}
+
+/// Logs audit information for token operations without logging sensitive data
+/// 
+/// # Arguments
+/// * `operation` - The operation type ("set_token" or "get_token")
+/// * `username` - The username (sanitized for logging)
+/// * `success` - Whether the operation succeeded
+/// * `error` - Optional error message (if operation failed)
+#[cfg_attr(test, allow(dead_code))]
+fn log_token_operation_audit(
+    operation: &str,
+    username: &str,
+    success: bool,
+    error: Option<&str>,
+) {
+    // Sanitize username for logging (truncate if too long, mask sensitive parts)
+    let sanitized_username = if username.len() > 20 {
+        format!("{}...", &username[..20])
+    } else {
+        username.to_string()
+    };
+
+    if success {
+        log::info!(
+            "Token operation audit: operation='{}', username='{}', status=success",
+            operation,
+            sanitized_username
+        );
+    } else {
+        log::warn!(
+            "Token operation audit: operation='{}', username='{}', status=failed, error='{}'",
+            operation,
+            sanitized_username,
+            error.unwrap_or("unknown")
+        );
+    }
 }
 
 /// Creates the main window based on connection state
@@ -346,35 +415,105 @@ async fn perform_update_check<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
+// === GLOBAL RATE LIMITER ===
+
+/// Global rate limiter instance for token operations
+static RATE_LIMITER: OnceLock<RateLimiter> = OnceLock::new();
+
+/// Gets or initializes the global rate limiter
+fn get_rate_limiter() -> &'static RateLimiter {
+    RATE_LIMITER.get_or_init(RateLimiter::new)
+}
+
 // === TAURI COMMANDS ===
 
 /// Stores an authentication token securely
+/// 
+/// # Security Features
+/// 
+/// - Rate limiting: Maximum 10 requests per 60 seconds
+/// - Input validation: Service, username, and token validation
+/// - Audit logging: Logs operations without sensitive data
+/// - Injection protection: Validates against null bytes and control characters
 #[command]
 async fn set_token(service: String, username: String, token: String) -> Result<(), String> {
+    // Rate limiting check
+    get_rate_limiter().check_rate_limit(
+        "set_token",
+        RATE_LIMIT_MAX_REQUESTS,
+        RATE_LIMIT_WINDOW_SECS,
+    )?;
+
+    // Enhanced input validation
     validate_service(&service)?;
     validate_token(&token)?;
     let normalized_username = normalize_username(&username)?;
 
-    let entry = keyring::Entry::new(KEYRING_SERVICE_ID, &normalized_username)
-        .map_err(|e| format!("Unable to create keyring entry: {}", e))?;
-    
-    entry
-        .set_password(&token)
-        .map_err(|e| format!("Token storage error: {:?}", e))
+    // Perform the operation
+    let result = (|| -> Result<(), String> {
+        let entry = keyring::Entry::new(KEYRING_SERVICE_ID, &normalized_username)
+            .map_err(|e| format!("Unable to create keyring entry: {}", e))?;
+        
+        entry
+            .set_password(&token)
+            .map_err(|e| format!("Token storage error: {:?}", e))
+    })();
+
+    // Audit logging (without logging the actual token)
+    match &result {
+        Ok(_) => {
+            log_token_operation_audit("set_token", &normalized_username, true, None);
+        }
+        Err(e) => {
+            log_token_operation_audit("set_token", &normalized_username, false, Some(e));
+        }
+    }
+
+    result
 }
 
 /// Retrieves a stored authentication token
+/// 
+/// # Security Features
+/// 
+/// - Rate limiting: Maximum 10 requests per 60 seconds
+/// - Input validation: Service and username validation
+/// - Audit logging: Logs operations without sensitive data
+/// - Injection protection: Validates against null bytes and control characters
 #[command]
 async fn get_token(service: String, username: String) -> Result<String, String> {
+    // Rate limiting check
+    get_rate_limiter().check_rate_limit(
+        "get_token",
+        RATE_LIMIT_MAX_REQUESTS,
+        RATE_LIMIT_WINDOW_SECS,
+    )?;
+
+    // Enhanced input validation
     validate_service(&service)?;
     let normalized_username = normalize_username(&username)?;
 
-    let entry = keyring::Entry::new(KEYRING_SERVICE_ID, &normalized_username)
-        .map_err(|e| format!("Unable to create keyring entry: {}", e))?;
-    
-    entry
-        .get_password()
-        .map_err(|e| format!("Token retrieval error: {:?}", e))
+    // Perform the operation
+    let result = (|| -> Result<String, String> {
+        let entry = keyring::Entry::new(KEYRING_SERVICE_ID, &normalized_username)
+            .map_err(|e| format!("Unable to create keyring entry: {}", e))?;
+        
+        entry
+            .get_password()
+            .map_err(|e| format!("Token retrieval error: {:?}", e))
+    })();
+
+    // Audit logging (without logging the actual token)
+    match &result {
+        Ok(_) => {
+            log_token_operation_audit("get_token", &normalized_username, true, None);
+        }
+        Err(e) => {
+            log_token_operation_audit("get_token", &normalized_username, false, Some(e));
+        }
+    }
+
+    result
 }
 
 /// Reloads the application by checking connectivity again
