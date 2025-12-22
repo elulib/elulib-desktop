@@ -24,15 +24,6 @@ jobs:
           - label: Windows (x64)
             os: windows-latest
             target: x86_64-pc-windows-msvc
-    env:
-      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-      MICROSOFT_AUTHENTICODE_CERTIFICATE: ${{ secrets.MICROSOFT_AUTHENTICODE_CERTIFICATE }}
-      MICROSOFT_AUTHENTICODE_CERTIFICATE_PASSWORD: ${{ secrets.MICROSOFT_AUTHENTICODE_CERTIFICATE_PASSWORD }}
-      APPLE_DEVELOPER_CERTIFICATE: ${{ secrets.APPLE_DEVELOPER_CERTIFICATE }}
-      APPLE_DEVELOPER_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_CERTIFICATE_PASSWORD }}
-      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -47,21 +38,18 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build with Tauri
+      # Windows build using Tauri action
+      - name: Build Windows
+        if: matrix.target == 'x86_64-pc-windows-msvc'
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # Explicitly disable macOS signing in Tauri build - we'll sign manually after build
-          APPLE_CERTIFICATE: ""
-          APPLE_CERTIFICATE_PASSWORD: ""
-          APPLE_SIGNING_IDENTITY: ""
-          # Windows code signing
           WINDOWS_CERTIFICATE: ${{ secrets.MICROSOFT_AUTHENTICODE_CERTIFICATE }}
           WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.MICROSOFT_AUTHENTICODE_CERTIFICATE_PASSWORD }}
         with:
-          args: --target ${{ matrix.target }} --bundles ${{ matrix.target == 'x86_64-pc-windows-msvc' && 'nsis' || 'app,dmg' }}
+          args: --target ${{ matrix.target }} --bundles nsis
           tagName: ${{ github.ref_name }}
           releaseId: ${{ github.event.release.id }}
           releaseName: ${{ github.event.release.name }}
@@ -69,241 +57,116 @@ jobs:
           releaseDraft: false
           prerelease: ${{ github.event.release.prerelease }}
 
-      - name: Code sign Windows installer
-        if: matrix.target == 'x86_64-pc-windows-msvc'
-        run: |
-          echo "Starting Windows code signing..."
-          
-          # Check if certificate is available
-          if [ -z "$MICROSOFT_AUTHENTICODE_CERTIFICATE" ]; then
-            echo "Warning: Microsoft Authenticode certificate not configured, skipping code signing"
-            exit 0
-          fi
-          
-          # Find the installer file
-          INSTALLER_PATH=$(find src-tauri/target/${{ matrix.target }}/release/bundle -name "*.exe" -o -name "*.msi" -o -name "*.zip" | head -1)
-          
-          if [ -z "$INSTALLER_PATH" ]; then
-            echo "Warning: Installer not found, skipping code signing"
-            exit 0
-          fi
-          
-          echo "Found installer: $INSTALLER_PATH"
-          
-          # Create temporary certificate file
-          CERT_FILE=$(mktemp).pfx
-          echo "$MICROSOFT_AUTHENTICODE_CERTIFICATE" | base64 -d > "$CERT_FILE" 2>/dev/null || echo "$MICROSOFT_AUTHENTICODE_CERTIFICATE" > "$CERT_FILE"
-          
-          # Import certificate to Windows certificate store
-          if [ -n "$MICROSOFT_AUTHENTICODE_CERTIFICATE_PASSWORD" ]; then
-            # Import PFX certificate
-            certutil -f -p "$MICROSOFT_AUTHENTICODE_CERTIFICATE_PASSWORD" -importpfx "$CERT_FILE" NoRoot
-          else
-            certutil -importpfx "$CERT_FILE" NoRoot
-          fi
-          
-          # Get certificate thumbprint
-          THUMBPRINT=$(powershell -Command "Get-ChildItem -Path Cert:\CurrentUser\My | Where-Object {$_.Subject -like '*'} | Select-Object -First 1 -ExpandProperty Thumbprint")
-          
-          if [ -z "$THUMBPRINT" ]; then
-            echo "Warning: Could not find certificate, skipping code signing"
-            rm -f "$CERT_FILE"
-            exit 0
-          fi
-          
-          echo "Using certificate thumbprint: $THUMBPRINT"
-          
-          # Sign the installer
-          if [[ "$INSTALLER_PATH" == *.exe ]] || [[ "$INSTALLER_PATH" == *.msi ]]; then
-            signtool sign /f "$CERT_FILE" /p "$MICROSOFT_AUTHENTICODE_CERTIFICATE_PASSWORD" /t http://timestamp.digicert.com "$INSTALLER_PATH" || {
-              echo "Warning: Code signing failed, continuing without signature"
-              rm -f "$CERT_FILE"
-              exit 0
-            }
-          elif [[ "$INSTALLER_PATH" == *.zip ]]; then
-            # For zip files, we need to extract, sign contents, and rezip
-            echo "Note: ZIP file signing requires extracting and signing individual files"
-            echo "Skipping ZIP signing for now"
-          fi
-          
-          # Clean up certificate file
-          rm -f "$CERT_FILE"
-          
-          echo "✓ Windows code signing completed"
-        env:
-          MICROSOFT_AUTHENTICODE_CERTIFICATE: ${{ secrets.MICROSOFT_AUTHENTICODE_CERTIFICATE }}
-          MICROSOFT_AUTHENTICODE_CERTIFICATE_PASSWORD: ${{ secrets.MICROSOFT_AUTHENTICODE_CERTIFICATE_PASSWORD }}
-
-      - name: Code sign macOS app
+      # macOS build (manual to avoid signing during build)
+      - name: Build macOS app
         if: matrix.target == 'aarch64-apple-darwin' || matrix.target == 'x86_64-apple-darwin'
         run: |
-          echo "Starting macOS code signing..."
-          
-          # Find the app bundle
+          cd src-tauri
+          cargo tauri build --target ${{ matrix.target }} --bundles app,dmg
+        env:
+          APPLE_CERTIFICATE: ""
+          APPLE_CERTIFICATE_PASSWORD: ""
+          APPLE_SIGNING_IDENTITY: ""
+
+      - name: Upload macOS artifacts
+        if: matrix.target == 'aarch64-apple-darwin' || matrix.target == 'x86_64-apple-darwin'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.dmg
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Sign macOS app
+        if: matrix.target == 'aarch64-apple-darwin' || matrix.target == 'x86_64-apple-darwin'
+        run: |
           APP_BUNDLE=$(find src-tauri/target/${{ matrix.target }}/release/bundle/macos -name "*.app" -type d | head -1)
           
-          if [ -z "$APP_BUNDLE" ]; then
-            echo "Warning: App bundle not found, skipping code signing"
-            exit 0
-          fi
-          
-          echo "Found app bundle: $APP_BUNDLE"
-          
-          # Create temporary keychain for signing
           KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain"
           KEYCHAIN_PASSWORD=$(openssl rand -base64 12)
           
-          # Create keychain
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           
-          # Import certificate
           CERT_FILE=$(mktemp).p12
           echo "$APPLE_DEVELOPER_CERTIFICATE" | base64 -d > "$CERT_FILE" 2>/dev/null || echo "$APPLE_DEVELOPER_CERTIFICATE" > "$CERT_FILE"
           
-          if [ -n "$APPLE_DEVELOPER_CERTIFICATE_PASSWORD" ]; then
-            security import "$CERT_FILE" -k "$KEYCHAIN_PATH" -P "$APPLE_DEVELOPER_CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security || {
-              echo "Warning: Failed to import certificate, skipping code signing"
-              rm -f "$CERT_FILE"
-              security delete-keychain "$KEYCHAIN_PATH"
-              exit 0
-            }
-          else
-            security import "$CERT_FILE" -k "$KEYCHAIN_PATH" -T /usr/bin/codesign -T /usr/bin/security || {
-              echo "Warning: Failed to import certificate, skipping code signing"
-              rm -f "$CERT_FILE"
-              security delete-keychain "$KEYCHAIN_PATH"
-              exit 0
-            }
-          fi
+          security import "$CERT_FILE" -k "$KEYCHAIN_PATH" -P "$APPLE_DEVELOPER_CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
           
-          # Set keychain as default
           security list-keychains -d user -s "$KEYCHAIN_PATH"
           security default-keychain -s "$KEYCHAIN_PATH"
           
-          # Determine signing identity
           SIGNING_IDENTITY="$APPLE_SIGNING_IDENTITY"
           if [ -z "$SIGNING_IDENTITY" ]; then
-            # Try to find identity from certificate
             SIGNING_IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep "Developer ID" | head -1 | sed 's/.*"\(.*\)".*/\1/')
-            if [ -z "$SIGNING_IDENTITY" ]; then
-              SIGNING_IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | head -1 | sed 's/.*"\(.*\)".*/\1/')
-            fi
           fi
           
-          if [ -z "$SIGNING_IDENTITY" ]; then
-            echo "Warning: Could not determine signing identity, skipping code signing"
-            rm -f "$CERT_FILE"
-            security delete-keychain "$KEYCHAIN_PATH"
-            exit 0
-          fi
+          codesign --force --deep --sign "$SIGNING_IDENTITY" --timestamp "$APP_BUNDLE"
+          codesign --verify --verbose "$APP_BUNDLE"
           
-          echo "Using signing identity: $SIGNING_IDENTITY"
-          
-          # Enable hardened runtime for signed app
-          # First, sign without hardened runtime to avoid issues
-          codesign --force --deep --sign "$SIGNING_IDENTITY" --timestamp "$APP_BUNDLE" || {
-            echo "Warning: Code signing failed, continuing without signature"
-            rm -f "$CERT_FILE"
-            security delete-keychain "$KEYCHAIN_PATH"
-            exit 0
-          }
-          
-          # Verify signature
-          codesign --verify --verbose "$APP_BUNDLE" || {
-            echo "Warning: Signature verification failed"
-          }
-          
-          # Clean up
           rm -f "$CERT_FILE"
           security delete-keychain "$KEYCHAIN_PATH"
-          
-          echo "✓ macOS code signing completed"
         env:
           APPLE_DEVELOPER_CERTIFICATE: ${{ secrets.APPLE_DEVELOPER_CERTIFICATE }}
           APPLE_DEVELOPER_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
-      - name: Generate signature for release artifact
+      - name: Sign Windows installer
+        if: matrix.target == 'x86_64-pc-windows-msvc'
+        run: |
+          INSTALLER_PATH=$(find src-tauri/target/${{ matrix.target }}/release/bundle -name "*.exe" -o -name "*.msi" -o -name "*.zip" | head -1)
+          
+          CERT_FILE=$(mktemp).pfx
+          echo "$MICROSOFT_AUTHENTICODE_CERTIFICATE" | base64 -d > "$CERT_FILE" 2>/dev/null || echo "$MICROSOFT_AUTHENTICODE_CERTIFICATE" > "$CERT_FILE"
+          
+          certutil -f -p "$MICROSOFT_AUTHENTICODE_CERTIFICATE_PASSWORD" -importpfx "$CERT_FILE" NoRoot
+          
+          if [[ "$INSTALLER_PATH" == *.exe ]] || [[ "$INSTALLER_PATH" == *.msi ]]; then
+            signtool sign /f "$CERT_FILE" /p "$MICROSOFT_AUTHENTICODE_CERTIFICATE_PASSWORD" /t http://timestamp.digicert.com "$INSTALLER_PATH"
+          fi
+          
+          rm -f "$CERT_FILE"
+        env:
+          MICROSOFT_AUTHENTICODE_CERTIFICATE: ${{ secrets.MICROSOFT_AUTHENTICODE_CERTIFICATE }}
+          MICROSOFT_AUTHENTICODE_CERTIFICATE_PASSWORD: ${{ secrets.MICROSOFT_AUTHENTICODE_CERTIFICATE_PASSWORD }}
+
+      - name: Generate artifact signature
         id: sign
         run: |
-          # Determine the artifact filename and platform key based on target
           if [[ "${{ matrix.target }}" == *"darwin"* ]]; then
             if [[ "${{ matrix.target }}" == *"aarch64"* ]]; then
-              ARTIFACT_PATTERN="*aarch64*.dmg"
               PLATFORM_KEY="darwin-aarch64"
             else
-              ARTIFACT_PATTERN="*x64*.dmg"
               PLATFORM_KEY="darwin-x86_64"
             fi
+            ARTIFACT_PATH=$(find src-tauri/target/${{ matrix.target }}/release/bundle/macos -name "*.dmg" | head -1)
           else
-            ARTIFACT_PATTERN="*.zip"
             PLATFORM_KEY="windows-x86_64"
+            ARTIFACT_PATH=$(find src-tauri/target/${{ matrix.target }}/release/bundle -name "*.zip" | head -1)
           fi
           
-          # Find the artifact file in bundle directory
-          ARTIFACT_PATH=$(find src-tauri/target/${{ matrix.target }}/release/bundle -type f \( -name "*.dmg" -o -name "*.zip" \) | head -1)
+          KEY_FILE=$(mktemp)
+          chmod 600 "$KEY_FILE"
+          echo "$TAURI_SIGNING_PRIVATE_KEY" | base64 -d > "$KEY_FILE" 2>/dev/null || echo "$TAURI_SIGNING_PRIVATE_KEY" > "$KEY_FILE"
           
-          if [ -z "$ARTIFACT_PATH" ]; then
-            echo "Error: Could not find release artifact in bundle directory"
-            # Try alternative locations
-            ARTIFACT_PATH=$(find . -type f \( -name "*.dmg" -o -name "*.zip" \) -path "*/bundle/*" | head -1)
-            if [ -z "$ARTIFACT_PATH" ]; then
-              echo "Warning: Release artifact not found, skipping signature generation"
-              echo "signature=" >> $GITHUB_OUTPUT
-              echo "platform_key=$PLATFORM_KEY" >> $GITHUB_OUTPUT
-              exit 0
-            fi
-          fi
+          SIGNATURE=$(npx @tauri-apps/cli signer sign "$ARTIFACT_PATH" --key "$KEY_FILE" --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" 2>&1 | tail -1)
           
-          echo "Found artifact: $ARTIFACT_PATH"
+          rm -f "$KEY_FILE"
+          
+          echo "signature=$SIGNATURE" >> $GITHUB_OUTPUT
           echo "platform_key=$PLATFORM_KEY" >> $GITHUB_OUTPUT
-          
-          # Generate signature using Tauri signer if keys are available
-          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ] && [ -n "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" ]; then
-            # Install Tauri CLI if not already available
-            if ! command -v tauri &> /dev/null; then
-              npm install -g @tauri-apps/cli
-            fi
-            
-            # Create temporary key file with proper permissions
-            KEY_FILE=$(mktemp)
-            chmod 600 "$KEY_FILE"
-            
-            # Decode and write the key
-            echo "$TAURI_SIGNING_PRIVATE_KEY" | base64 -d > "$KEY_FILE" 2>/dev/null || echo "$TAURI_SIGNING_PRIVATE_KEY" > "$KEY_FILE"
-            
-            # Generate signature using Tauri signer
-            SIGNATURE=$(tauri signer sign "$ARTIFACT_PATH" --key "$KEY_FILE" --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" 2>&1 | tail -1 || echo "")
-            
-            # Clean up key file immediately
-            rm -f "$KEY_FILE"
-            
-            # Validate signature (should be a base64-like string)
-            if [ -n "$SIGNATURE" ] && [ ${#SIGNATURE} -gt 50 ]; then
-              echo "signature=$SIGNATURE" >> $GITHUB_OUTPUT
-              echo "✓ Generated signature for $PLATFORM_KEY (length: ${#SIGNATURE})"
-            else
-              echo "Warning: Invalid signature generated, continuing without signature"
-              echo "signature=" >> $GITHUB_OUTPUT
-            fi
-          else
-            echo "Warning: Signing keys not configured, skipping signature generation"
-            echo "signature=" >> $GITHUB_OUTPUT
-          fi
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
       - name: Create signature info file
-        if: steps.sign.outputs.signature != '' && steps.sign.outputs.signature != 'null'
+        if: steps.sign.outputs.signature != ''
         run: |
           echo "${{ steps.sign.outputs.platform_key }}|${{ steps.sign.outputs.signature }}" > signature-info.txt
 
       - name: Upload signature artifact
-        if: steps.sign.outputs.signature != '' && steps.sign.outputs.signature != 'null'
+        if: steps.sign.outputs.signature != ''
         uses: actions/upload-artifact@v4
         with:
           name: signature-${{ matrix.target }}
@@ -317,8 +180,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Download signature artifacts
         uses: actions/download-artifact@v4
@@ -327,7 +188,7 @@ jobs:
           merge-multiple: true
           path: signatures
 
-      - name: Sync manifest metadata
+      - name: Update manifest
         run: |
           python - <<'PY'
           import json
@@ -341,55 +202,36 @@ jobs:
 
           tag = os.environ.get("TAG_NAME", "")
           version = tag[1:] if tag.startswith("v") else tag
-          notes = os.environ.get("RELEASE_NOTES") or ""
-          pub_date = os.environ.get("RELEASE_DATE")
-          if not pub_date:
-              pub_date = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-
-          if version:
-              data["version"] = version
-
-          data["notes"] = notes
-          data["pub_date"] = pub_date
+          
+          data["version"] = version
+          data["notes"] = os.environ.get("RELEASE_NOTES", "")
+          data["pub_date"] = os.environ.get("RELEASE_DATE", datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"))
 
           base_url = f"https://github.com/elulib/desktop-app/releases/download/{tag}"
           platforms = data.get("platforms", {})
-
+          
           files = {
               "darwin-x86_64": f"elulib_{version}_x64.dmg",
               "darwin-aarch64": f"elulib_{version}_aarch64.dmg",
               "windows-x86_64": f"elulib_{version}_x64-setup.nsis.zip",
           }
-
-          # Load signatures from artifacts
+          
           signatures = {}
           signatures_dir = Path("signatures")
           if signatures_dir.exists():
-              # Look for signature-info.txt files in subdirectories
               for sig_file in signatures_dir.rglob("signature-info.txt"):
-                  try:
-                      with open(sig_file, "r", encoding="utf-8") as f:
-                          line = f.read().strip()
-                          if "|" in line:
-                              platform_key, signature = line.split("|", 1)
-                              if signature and signature.strip():
-                                  signatures[platform_key] = signature.strip()
-                                  print(f"Loaded signature for {platform_key}")
-                  except Exception as e:
-                      print(f"Warning: Could not read signature file {sig_file}: {e}")
+                  with open(sig_file, "r", encoding="utf-8") as f:
+                      line = f.read().strip()
+                      if "|" in line:
+                          platform_key, signature = line.split("|", 1)
+                          signatures[platform_key] = signature.strip()
 
-          # Update platform entries with URLs and signatures
           for platform, filename in files.items():
               entry = platforms.get(platform)
-              if entry and version:
+              if entry:
                   entry["url"] = f"{base_url}/{filename}"
-                  # Add signature if available
                   if platform in signatures:
                       entry["signature"] = signatures[platform]
-                      print(f"Added signature for {platform}")
-                  elif entry.get("signature") == "":
-                      # Keep empty signature if no signature was generated
-                      print(f"Warning: No signature available for {platform}")
 
           with open(path, "w", encoding="utf-8") as writer:
               json.dump(data, writer, indent=2)
@@ -400,11 +242,10 @@ jobs:
           RELEASE_NOTES: ${{ github.event.release.body }}
           RELEASE_DATE: ${{ github.event.release.published_at }}
 
-      - name: Attach tauri.update.json to release
+      - name: Attach manifest to release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           files: src-tauri/tauri.update.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
