@@ -72,16 +72,7 @@ jobs:
         if: matrix.target == 'aarch64-apple-darwin' || matrix.target == 'x86_64-apple-darwin'
         run: |
           cd src-tauri
-          cargo tauri build --target ${{ matrix.target }} --bundles app,dmg --verbose
-
-      - name: Upload macOS artifacts
-        if: matrix.target == 'aarch64-apple-darwin' || matrix.target == 'x86_64-apple-darwin'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.ref_name }}
-          files: src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.dmg
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          cargo tauri build --target ${{ matrix.target }} --bundles app --verbose
 
       - name: Sign macOS app
         if: ${{ (matrix.target == 'aarch64-apple-darwin' || matrix.target == 'x86_64-apple-darwin') && env.HAS_APPLE_CERT == 'true' }}
@@ -117,6 +108,45 @@ jobs:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - name: Create macOS DMG
+        if: matrix.target == 'aarch64-apple-darwin' || matrix.target == 'x86_64-apple-darwin'
+        run: |
+          VERSION="${{ github.ref_name }}"
+          VERSION=${VERSION#v}  # Remove 'v' prefix if present
+          
+          if [[ "${{ matrix.target }}" == *"aarch64"* ]]; then
+            ARCH="aarch64"
+          else
+            ARCH="x64"
+          fi
+          
+          APP_BUNDLE=$(find src-tauri/target/${{ matrix.target }}/release/bundle/macos -name "*.app" -type d | head -1)
+          APP_NAME=$(basename "$APP_BUNDLE" .app)
+          DMG_NAME="elulib_${VERSION}_${ARCH}.dmg"
+          DMG_PATH="src-tauri/target/${{ matrix.target }}/release/bundle/macos/$DMG_NAME"
+          
+          # Create a temporary directory for DMG contents
+          DMG_TEMP=$(mktemp -d)
+          cp -R "$APP_BUNDLE" "$DMG_TEMP/"
+          ln -s /Applications "$DMG_TEMP/Applications"
+          
+          # Create DMG using hdiutil
+          hdiutil create -volname "$APP_NAME" -srcfolder "$DMG_TEMP" -ov -format UDZO "$DMG_PATH"
+          
+          # Clean up
+          rm -rf "$DMG_TEMP"
+          
+          echo "Created DMG: $DMG_PATH"
+
+      - name: Upload macOS artifacts
+        if: matrix.target == 'aarch64-apple-darwin' || matrix.target == 'x86_64-apple-darwin'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.dmg
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Sign Windows installer
         if: ${{ matrix.target == 'x86_64-pc-windows-msvc' && env.HAS_WIN_CERT == 'true' }}
