@@ -573,10 +573,10 @@ fn setup_system_tray(app: &App) -> tauri::Result<()> {
     log::info!("Configuring system tray icon...");
     
     // Create menu items
-    let open_item = MenuItemBuilder::with_id("open", "Open élulib").build(app)?;
-    let settings_item = MenuItemBuilder::with_id("settings", "Settings").build(app)?;
-    let update_check_item = MenuItemBuilder::with_id("check_updates", "Check for Updates").build(app)?;
-    let quit_item = MenuItemBuilder::with_id("quit", "Quit élulib").build(app)?;
+    let open_item = MenuItemBuilder::with_id("open", "Ouvrir élulib").build(app)?;
+    let settings_item = MenuItemBuilder::with_id("settings", "Paramètres").build(app)?;
+    let update_check_item = MenuItemBuilder::with_id("check_updates", "Vérifier les mises à jour").build(app)?;
+    let quit_item = MenuItemBuilder::with_id("quit", "Quitter").build(app)?;
     let separator = PredefinedMenuItem::separator(app)?;
     
     // Build the menu
