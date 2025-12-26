@@ -69,11 +69,7 @@ jobs:
         if: matrix.target == 'aarch64-apple-darwin' || matrix.target == 'x86_64-apple-darwin'
         run: |
           cd src-tauri
-          cargo tauri build --target ${{ matrix.target }} --bundles app,dmg
-        env:
-          APPLE_CERTIFICATE: ""
-          APPLE_CERTIFICATE_PASSWORD: ""
-          APPLE_SIGNING_IDENTITY: ""
+          cargo tauri build --target ${{ matrix.target }} --bundles app,dmg --verbose
 
       - name: Upload macOS artifacts
         if: matrix.target == 'aarch64-apple-darwin' || matrix.target == 'x86_64-apple-darwin'
@@ -85,7 +81,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Sign macOS app
-        if: matrix.target == 'aarch64-apple-darwin' || matrix.target == 'x86_64-apple-darwin'
+        if: (matrix.target == 'aarch64-apple-darwin' || matrix.target == 'x86_64-apple-darwin') && secrets.APPLE_DEVELOPER_CERTIFICATE != '' && secrets.APPLE_DEVELOPER_CERTIFICATE_PASSWORD != ''
         run: |
           APP_BUNDLE=$(find src-tauri/target/${{ matrix.target }}/release/bundle/macos -name "*.app" -type d | head -1)
           
@@ -120,20 +116,29 @@ jobs:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
 
       - name: Sign Windows installer
-        if: matrix.target == 'x86_64-pc-windows-msvc'
+        if: matrix.target == 'x86_64-pc-windows-msvc' && secrets.MICROSOFT_AUTHENTICODE_CERTIFICATE != '' && secrets.MICROSOFT_AUTHENTICODE_CERTIFICATE_PASSWORD != ''
+        shell: pwsh
         run: |
-          INSTALLER_PATH=$(find src-tauri/target/${{ matrix.target }}/release/bundle -name "*.exe" -o -name "*.msi" -o -name "*.zip" | head -1)
-          
-          CERT_FILE=$(mktemp).pfx
-          echo "$MICROSOFT_AUTHENTICODE_CERTIFICATE" | base64 -d > "$CERT_FILE" 2>/dev/null || echo "$MICROSOFT_AUTHENTICODE_CERTIFICATE" > "$CERT_FILE"
-          
-          certutil -f -p "$MICROSOFT_AUTHENTICODE_CERTIFICATE_PASSWORD" -importpfx "$CERT_FILE" NoRoot
-          
-          if [[ "$INSTALLER_PATH" == *.exe ]] || [[ "$INSTALLER_PATH" == *.msi ]]; then
-            signtool sign /f "$CERT_FILE" /p "$MICROSOFT_AUTHENTICODE_CERTIFICATE_PASSWORD" /t http://timestamp.digicert.com "$INSTALLER_PATH"
-          fi
-          
-          rm -f "$CERT_FILE"
+          $installer = Get-ChildItem "src-tauri/target/${{ matrix.target }}/release/bundle" -Recurse -Include *.exe,*.msi,*.zip | Select-Object -First 1
+          if (-not $installer) { Write-Error "Installer not found"; exit 1 }
+
+          $certPath = [System.IO.Path]::Combine($env:RUNNER_TEMP, "signing_cert.pfx")
+          $raw = $env:MICROSOFT_AUTHENTICODE_CERTIFICATE
+          $bytes = $null
+          try { $bytes = [System.Convert]::FromBase64String($raw) } catch {}
+          if ($bytes) {
+            [System.IO.File]::WriteAllBytes($certPath, $bytes)
+          } else {
+            Set-Content -Path $certPath -Value $raw -Encoding ascii
+          }
+
+          certutil -f -p "$env:MICROSOFT_AUTHENTICODE_CERTIFICATE_PASSWORD" -importpfx $certPath NoRoot
+
+          if ($installer.Extension -eq ".exe" -or $installer.Extension -eq ".msi") {
+            signtool sign /f $certPath /p "$env:MICROSOFT_AUTHENTICODE_CERTIFICATE_PASSWORD" /t http://timestamp.digicert.com $installer.FullName
+          }
+
+          Remove-Item $certPath -ErrorAction SilentlyContinue
         env:
           MICROSOFT_AUTHENTICODE_CERTIFICATE: ${{ secrets.MICROSOFT_AUTHENTICODE_CERTIFICATE }}
           MICROSOFT_AUTHENTICODE_CERTIFICATE_PASSWORD: ${{ secrets.MICROSOFT_AUTHENTICODE_CERTIFICATE_PASSWORD }}
