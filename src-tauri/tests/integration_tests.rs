@@ -202,3 +202,222 @@ mod error_handling_integration_tests {
     }
 }
 
+// Update flow simulation integration tests
+mod update_flow_simulation_tests {
+    use tokio_test::block_on;
+
+    #[derive(Debug, Clone)]
+    struct MockUpdate {
+        version: String,
+        fail_install: bool,
+        install_attempts: usize,
+        installed: bool,
+    }
+
+    impl MockUpdate {
+        fn new(version: &str, fail_install: bool) -> Self {
+            Self {
+                version: version.to_string(),
+                fail_install,
+                install_attempts: 0,
+                installed: false,
+            }
+        }
+
+        async fn download_and_install<Progress, Complete>(
+            &mut self,
+            progress: Progress,
+            complete: Complete,
+        ) -> Result<(), String>
+        where
+            Progress: Fn(u64, u64) + Send + Sync + 'static,
+            Complete: Fn() + Send + Sync + 'static,
+        {
+            self.install_attempts += 1;
+            progress(0, 100);
+
+            if self.fail_install {
+                return Err("Simulated install failure".into());
+            }
+
+            complete();
+            self.installed = true;
+            Ok(())
+        }
+    }
+
+    #[derive(Debug)]
+    enum UpdaterScenario {
+        Update(MockUpdate),
+        NoUpdate,
+        Error(String),
+    }
+
+    #[derive(Debug)]
+    struct MockUpdater {
+        scenario: UpdaterScenario,
+        check_calls: usize,
+    }
+
+    impl MockUpdater {
+        fn new(scenario: UpdaterScenario) -> Self {
+            Self {
+                scenario,
+                check_calls: 0,
+            }
+        }
+
+        async fn check(&mut self) -> Result<Option<MockUpdate>, String> {
+            self.check_calls += 1;
+            match &self.scenario {
+                UpdaterScenario::Update(update) => Ok(Some(update.clone())),
+                UpdaterScenario::NoUpdate => Ok(None),
+                UpdaterScenario::Error(err) => Err(err.clone()),
+            }
+        }
+    }
+
+    #[derive(Default, Debug)]
+    struct UpdateTestHarness {
+        dialogs: Vec<String>,
+        error_dialogs: Vec<String>,
+        installations: usize,
+        exit_called: bool,
+        declined_prompts: usize,
+        no_update_seen: usize,
+        current_version: String,
+        should_accept_update: bool,
+    }
+
+    impl UpdateTestHarness {
+        fn new(current_version: &str, should_accept_update: bool) -> Self {
+            Self {
+                current_version: current_version.to_string(),
+                should_accept_update,
+                ..Default::default()
+            }
+        }
+    }
+
+    async fn simulate_update_flow(harness: &mut UpdateTestHarness, updater: &mut MockUpdater) {
+        match updater.check().await {
+            Ok(Some(mut update)) => {
+                let dialog_message = format!(
+                    "Une nouvelle version est disponible, voulez-vous mettre à jour dès maintenant ?\n\n\
+                    Version actuelle : {}\n\
+                    Nouvelle version : {}",
+                    harness.current_version,
+                    update.version
+                );
+
+                harness.dialogs.push(dialog_message);
+
+                if harness.should_accept_update {
+                    match update.download_and_install(|_, _| {}, || {}).await {
+                        Ok(_) => {
+                            harness.installations += 1;
+                            harness.exit_called = true; // Mirrors std::process::exit(0) call
+                            assert!(update.installed, "Update should mark installed on success");
+                        }
+                        Err(e) => {
+                            let error_message = format!(
+                                "La mise à jour a échoué : {}\n\n\
+                                Vous pouvez réessayer plus tard via le menu du système.",
+                                e
+                            );
+                            harness.error_dialogs.push(error_message);
+                        }
+                    }
+                } else {
+                    harness.declined_prompts += 1;
+                }
+            }
+            Ok(None) => {
+                harness.no_update_seen += 1;
+            }
+            Err(e) => {
+                harness.error_dialogs
+                    .push(format!("Error checking for updates: {}", e));
+            }
+        }
+    }
+
+    #[test]
+    fn test_update_installation_happy_path() {
+        let mut harness = UpdateTestHarness::new("1.0.0", true);
+        let mut updater = MockUpdater::new(UpdaterScenario::Update(MockUpdate::new("1.1.0", false)));
+
+        block_on(simulate_update_flow(&mut harness, &mut updater));
+
+        assert_eq!(updater.check_calls, 1);
+        assert_eq!(harness.dialogs.len(), 1);
+        assert!(harness.dialogs[0].contains("Une nouvelle version est disponible"));
+        assert!(harness.dialogs[0].contains("Version actuelle : 1.0.0"));
+        assert!(harness.dialogs[0].contains("Nouvelle version : 1.1.0"));
+        assert_eq!(harness.installations, 1);
+        assert!(harness.exit_called);
+        assert!(harness.error_dialogs.is_empty());
+    }
+
+    #[test]
+    fn test_update_declined_skips_installation() {
+        let mut harness = UpdateTestHarness::new("2.0.0", false);
+        let mut updater = MockUpdater::new(UpdaterScenario::Update(MockUpdate::new("2.1.0", false)));
+
+        block_on(simulate_update_flow(&mut harness, &mut updater));
+
+        assert_eq!(harness.dialogs.len(), 1);
+        assert_eq!(harness.declined_prompts, 1);
+        assert_eq!(harness.installations, 0);
+        assert!(!harness.exit_called);
+        assert!(harness.error_dialogs.is_empty());
+    }
+
+    #[test]
+    fn test_update_installation_error_shows_french_dialog() {
+        let mut harness = UpdateTestHarness::new("3.0.0", true);
+        let mut updater =
+            MockUpdater::new(UpdaterScenario::Update(MockUpdate::new("3.1.0", true)));
+
+        block_on(simulate_update_flow(&mut harness, &mut updater));
+
+        assert_eq!(harness.installations, 0);
+        assert!(!harness.exit_called);
+        assert_eq!(harness.error_dialogs.len(), 1);
+        let error_dialog = &harness.error_dialogs[0];
+        assert!(error_dialog.contains("La mise à jour a échoué"));
+        assert!(error_dialog.contains("Vous pouvez réessayer plus tard"));
+        assert!(error_dialog.contains("Simulated install failure"));
+    }
+
+    #[test]
+    fn test_no_update_skips_prompt() {
+        let mut harness = UpdateTestHarness::new("1.2.3", true);
+        let mut updater = MockUpdater::new(UpdaterScenario::NoUpdate);
+
+        block_on(simulate_update_flow(&mut harness, &mut updater));
+
+        assert_eq!(harness.no_update_seen, 1);
+        assert!(harness.dialogs.is_empty());
+        assert!(harness.error_dialogs.is_empty());
+        assert_eq!(harness.installations, 0);
+        assert!(!harness.exit_called);
+    }
+
+    #[test]
+    fn test_updater_error_is_reported() {
+        let mut harness = UpdateTestHarness::new("4.0.0", true);
+        let mut updater =
+            MockUpdater::new(UpdaterScenario::Error("network failure".to_string()));
+
+        block_on(simulate_update_flow(&mut harness, &mut updater));
+
+        assert_eq!(harness.dialogs.len(), 0);
+        assert_eq!(harness.installations, 0);
+        assert!(!harness.exit_called);
+        assert_eq!(harness.error_dialogs.len(), 1);
+        assert!(harness.error_dialogs[0].contains("Error checking for updates"));
+        assert!(harness.error_dialogs[0].contains("network failure"));
+    }
+}
+

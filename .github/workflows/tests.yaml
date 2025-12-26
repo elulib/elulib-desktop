@@ -55,8 +55,7 @@ jobs:
         working-directory: src-tauri
         run: |
           echo "Running integration tests..."
-          cargo test --test unit_tests --verbose
-          cargo test --test integration_tests --verbose
+          cargo test --tests --verbose
         continue-on-error: false
 
       - name: Test summary
