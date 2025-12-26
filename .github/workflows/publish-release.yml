@@ -158,10 +158,10 @@ jobs:
             else
               PLATFORM_KEY="darwin-x86_64"
             fi
-            ARTIFACT_PATH=$(find src-tauri/target/${{ matrix.target }}/release/bundle/macos -name "*.dmg" -o -name "*.zip" | head -1)
+            ARTIFACT_PATH=$(find src-tauri/target/${{ matrix.target }}/release/bundle/macos -name "*.dmg" -o -name "*.zip" 2>/dev/null | head -1 || true)
           else
             PLATFORM_KEY="windows-x86_64"
-            ARTIFACT_PATH=$(find src-tauri/target/${{ matrix.target }}/release/bundle -name "*.exe" -o -name "*.msi" -o -name "*.zip" | head -1)
+            ARTIFACT_PATH=$(find src-tauri/target/${{ matrix.target }}/release/bundle -name "*.exe" -o -name "*.msi" -o -name "*.zip" 2>/dev/null | head -1 || true)
           fi
           
           if [[ -z "$ARTIFACT_PATH" ]]; then
