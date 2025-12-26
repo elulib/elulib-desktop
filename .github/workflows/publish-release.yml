@@ -12,8 +12,8 @@ jobs:
     name: Build ${{ matrix.label }}
     runs-on: ${{ matrix.os }}
     env:
-      HAS_APPLE_CERT: ${{ secrets.APPLE_DEVELOPER_CERTIFICATE != '' && secrets.APPLE_DEVELOPER_CERTIFICATE_PASSWORD != '' }}
-      HAS_WIN_CERT: ${{ secrets.MICROSOFT_AUTHENTICODE_CERTIFICATE != '' && secrets.MICROSOFT_AUTHENTICODE_CERTIFICATE_PASSWORD != '' }}
+      HAS_APPLE_CERT: ${{ secrets.APPLE_CERTIFICATE != '' && secrets.APPLE_CERTIFICATE_PASSWORD != '' }}
+      HAS_WIN_CERT: ${{ secrets.MICROSOFT_CERTIFICATE != '' && secrets.MICROSOFT_CERTIFICATE_PASSWORD != '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -56,8 +56,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          WINDOWS_CERTIFICATE: ${{ secrets.MICROSOFT_AUTHENTICODE_CERTIFICATE }}
-          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.MICROSOFT_AUTHENTICODE_CERTIFICATE_PASSWORD }}
+          WINDOWS_CERTIFICATE: ${{ secrets.MICROSOFT_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.MICROSOFT_CERTIFICATE_PASSWORD }}
         with:
           args: --target ${{ matrix.target }} --bundles nsis
           tagName: ${{ github.ref_name }}
@@ -96,14 +96,14 @@ jobs:
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           
           CERT_FILE=$(mktemp).p12
-          echo "$APPLE_DEVELOPER_CERTIFICATE" | base64 -d > "$CERT_FILE" 2>/dev/null || echo "$APPLE_DEVELOPER_CERTIFICATE" > "$CERT_FILE"
+          echo "$APPLE_CERTIFICATE" | base64 -d > "$CERT_FILE" 2>/dev/null || echo "$APPLE_CERTIFICATE" > "$CERT_FILE"
           
-          security import "$CERT_FILE" -k "$KEYCHAIN_PATH" -P "$APPLE_DEVELOPER_CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          security import "$CERT_FILE" -k "$KEYCHAIN_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
           
           security list-keychains -d user -s "$KEYCHAIN_PATH"
           security default-keychain -s "$KEYCHAIN_PATH"
           
-          SIGNING_IDENTITY="$APPLE_SIGNING_IDENTITY"
+          SIGNING_IDENTITY="$APPLE_TEAM_ID"
           if [ -z "$SIGNING_IDENTITY" ]; then
             SIGNING_IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep "Developer ID" | head -1 | sed 's/.*"\(.*\)".*/\1/')
           fi
@@ -114,9 +114,9 @@ jobs:
           rm -f "$CERT_FILE"
           security delete-keychain "$KEYCHAIN_PATH"
         env:
-          APPLE_DEVELOPER_CERTIFICATE: ${{ secrets.APPLE_DEVELOPER_CERTIFICATE }}
-          APPLE_DEVELOPER_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
       - name: Sign Windows installer
         if: ${{ matrix.target == 'x86_64-pc-windows-msvc' && env.HAS_WIN_CERT == 'true' }}
@@ -126,7 +126,7 @@ jobs:
           if (-not $installer) { Write-Error "Installer not found"; exit 1 }
 
           $certPath = [System.IO.Path]::Combine($env:RUNNER_TEMP, "signing_cert.pfx")
-          $raw = $env:MICROSOFT_AUTHENTICODE_CERTIFICATE
+          $raw = $env:MICROSOFT_CERTIFICATE
           $bytes = $null
           try { $bytes = [System.Convert]::FromBase64String($raw) } catch {}
           if ($bytes) {
@@ -135,16 +135,16 @@ jobs:
             Set-Content -Path $certPath -Value $raw -Encoding ascii
           }
 
-          certutil -f -p "$env:MICROSOFT_AUTHENTICODE_CERTIFICATE_PASSWORD" -importpfx $certPath NoRoot
+          certutil -f -p "$env:MICROSOFT_CERTIFICATE_PASSWORD" -importpfx $certPath NoRoot
 
           if ($installer.Extension -eq ".exe" -or $installer.Extension -eq ".msi") {
-            signtool sign /f $certPath /p "$env:MICROSOFT_AUTHENTICODE_CERTIFICATE_PASSWORD" /t http://timestamp.digicert.com $installer.FullName
+            signtool sign /f $certPath /p "$env:MICROSOFT_CERTIFICATE_PASSWORD" /t http://timestamp.digicert.com $installer.FullName
           }
 
           Remove-Item $certPath -ErrorAction SilentlyContinue
         env:
-          MICROSOFT_AUTHENTICODE_CERTIFICATE: ${{ secrets.MICROSOFT_AUTHENTICODE_CERTIFICATE }}
-          MICROSOFT_AUTHENTICODE_CERTIFICATE_PASSWORD: ${{ secrets.MICROSOFT_AUTHENTICODE_CERTIFICATE_PASSWORD }}
+          MICROSOFT_CERTIFICATE: ${{ secrets.MICROSOFT_CERTIFICATE }}
+          MICROSOFT_CERTIFICATE_PASSWORD: ${{ secrets.MICROSOFT_CERTIFICATE_PASSWORD }}
 
       - name: Generate artifact signature
         id: sign
