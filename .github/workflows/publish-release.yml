@@ -148,6 +148,7 @@ jobs:
 
       - name: Generate artifact signature
         id: sign
+        shell: bash
         run: |
           if [[ "${{ matrix.target }}" == *"darwin"* ]]; then
             if [[ "${{ matrix.target }}" == *"aarch64"* ]]; then
