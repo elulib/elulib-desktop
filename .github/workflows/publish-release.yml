@@ -11,6 +11,9 @@ jobs:
   build:
     name: Build ${{ matrix.label }}
     runs-on: ${{ matrix.os }}
+    env:
+      HAS_APPLE_CERT: ${{ secrets.APPLE_DEVELOPER_CERTIFICATE != '' && secrets.APPLE_DEVELOPER_CERTIFICATE_PASSWORD != '' }}
+      HAS_WIN_CERT: ${{ secrets.MICROSOFT_AUTHENTICODE_CERTIFICATE != '' && secrets.MICROSOFT_AUTHENTICODE_CERTIFICATE_PASSWORD != '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -81,7 +84,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Sign macOS app
-        if: ${{ (matrix.target == 'aarch64-apple-darwin' || matrix.target == 'x86_64-apple-darwin') && secrets.APPLE_DEVELOPER_CERTIFICATE != '' && secrets.APPLE_DEVELOPER_CERTIFICATE_PASSWORD != '' }}
+        if: ${{ (matrix.target == 'aarch64-apple-darwin' || matrix.target == 'x86_64-apple-darwin') && env.HAS_APPLE_CERT == 'true' }}
         run: |
           APP_BUNDLE=$(find src-tauri/target/${{ matrix.target }}/release/bundle/macos -name "*.app" -type d | head -1)
           
@@ -116,7 +119,7 @@ jobs:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
 
       - name: Sign Windows installer
-        if: ${{ matrix.target == 'x86_64-pc-windows-msvc' && secrets.MICROSOFT_AUTHENTICODE_CERTIFICATE != '' && secrets.MICROSOFT_AUTHENTICODE_CERTIFICATE_PASSWORD != '' }}
+        if: ${{ matrix.target == 'x86_64-pc-windows-msvc' && env.HAS_WIN_CERT == 'true' }}
         shell: pwsh
         run: |
           $installer = Get-ChildItem "src-tauri/target/${{ matrix.target }}/release/bundle" -Recurse -Include *.exe,*.msi,*.zip | Select-Object -First 1
