@@ -271,7 +271,7 @@ jobs:
           data["notes"] = os.environ.get("RELEASE_NOTES", "")
           data["pub_date"] = os.environ.get("RELEASE_DATE", datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"))
 
-          base_url = f"https://github.com/elulib/desktop-app/releases/download/{tag}"
+          base_url = f"https://github.com/elulib/elulib-desktop/releases/download/{tag}"
           platforms = data.get("platforms", {})
           
           files = {
