@@ -150,16 +150,23 @@ jobs:
         id: sign
         shell: bash
         run: |
+          set -euo pipefail
+
           if [[ "${{ matrix.target }}" == *"darwin"* ]]; then
             if [[ "${{ matrix.target }}" == *"aarch64"* ]]; then
               PLATFORM_KEY="darwin-aarch64"
             else
               PLATFORM_KEY="darwin-x86_64"
             fi
-            ARTIFACT_PATH=$(find src-tauri/target/${{ matrix.target }}/release/bundle/macos -name "*.dmg" | head -1)
+            ARTIFACT_PATH=$(find src-tauri/target/${{ matrix.target }}/release/bundle/macos -name "*.dmg" -o -name "*.zip" | head -1)
           else
             PLATFORM_KEY="windows-x86_64"
-            ARTIFACT_PATH=$(find src-tauri/target/${{ matrix.target }}/release/bundle -name "*.zip" | head -1)
+            ARTIFACT_PATH=$(find src-tauri/target/${{ matrix.target }}/release/bundle -name "*.exe" -o -name "*.msi" -o -name "*.zip" | head -1)
+          fi
+          
+          if [[ -z "$ARTIFACT_PATH" ]]; then
+            echo "::warning::No artifact found for ${PLATFORM_KEY}; skipping signature generation."
+            exit 0
           fi
           
           KEY_FILE=$(mktemp)
