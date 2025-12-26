@@ -168,12 +168,23 @@ jobs:
             echo "::warning::No artifact found for ${PLATFORM_KEY}; skipping signature generation."
             exit 0
           fi
+          if [[ ! -f "$ARTIFACT_PATH" ]]; then
+            echo "::warning::Artifact path not found: $ARTIFACT_PATH; skipping signature generation."
+            exit 0
+          fi
           
           KEY_FILE=$(mktemp)
           chmod 600 "$KEY_FILE"
           echo "$TAURI_SIGNING_PRIVATE_KEY" | base64 -d > "$KEY_FILE" 2>/dev/null || echo "$TAURI_SIGNING_PRIVATE_KEY" > "$KEY_FILE"
           
-          SIGNATURE=$(npx @tauri-apps/cli signer sign "$ARTIFACT_PATH" --key "$KEY_FILE" --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" 2>&1 | tail -1)
+          SIGNATURE_OUTPUT=$(npx @tauri-apps/cli signer sign "$ARTIFACT_PATH" --key "$KEY_FILE" --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" 2>&1 || true)
+          SIGNATURE=$(echo "$SIGNATURE_OUTPUT" | tail -1)
+          
+          if [[ -z "$SIGNATURE" ]]; then
+            echo "::warning::Signature generation failed or returned empty output; continuing without signature."
+            rm -f "$KEY_FILE"
+            exit 0
+          fi
           
           rm -f "$KEY_FILE"
           
