@@ -21,7 +21,9 @@ rustup target add x86_64-pc-windows-msvc aarch64-apple-darwin x86_64-apple-darwi
 
 Run the app:
 ```bash
-npm run tauri dev
+npm run dev:win
+npm run dev:mac
+npm run dev:mac-intel
 ```
 
 ## Testing
