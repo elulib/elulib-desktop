@@ -1,4 +1,4 @@
-name: Tests
+name: Test
 
 on:
   pull_request:
@@ -7,8 +7,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  test-rust:
-    name: Rust Tests
+  test:
+    name: Test
     runs-on: ubuntu-latest
     
     steps:
