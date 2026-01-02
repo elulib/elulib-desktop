@@ -39,6 +39,9 @@ pub const MIN_WINDOW_HEIGHT: f64 = 600.0;
 /// Delay before checking for updates (seconds)
 pub const UPDATE_CHECK_DELAY_SECS: u64 = 5;
 
+/// Minimum time between update checks (24 hours in seconds)
+pub const UPDATE_CHECK_COOLDOWN_SECS: u64 = 86400;
+
 /// Local fallback URL for offline display
 pub const LOCAL_ERROR_PAGE_URL: &str = "http://localhost/connection-error.html";
 

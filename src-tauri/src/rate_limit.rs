@@ -38,7 +38,8 @@ impl RateLimiter {
         max_requests: u32,
         window_seconds: u64,
     ) -> Result<(), String> {
-        let mut requests = self.requests.lock().unwrap();
+        let mut requests = self.requests.lock()
+            .map_err(|e| format!("Rate limiter lock error: {}", e))?;
         let now = Instant::now();
         let window = Duration::from_secs(window_seconds);
 
@@ -63,10 +64,21 @@ impl RateLimiter {
     }
 
     /// Cleans up old entries to prevent memory growth
-    /// Should be called periodically (not implemented here as it's a desktop app)
-    #[allow(dead_code)]
+    /// 
+    /// Removes entries older than 1 hour and empty operation buckets.
+    /// This should be called periodically to prevent unbounded memory growth.
+    /// 
+    /// # Errors
+    /// 
+    /// Logs errors but does not propagate them, as cleanup failures are non-critical.
     pub fn cleanup(&self) {
-        let mut requests = self.requests.lock().unwrap();
+        let mut requests = match self.requests.lock() {
+            Ok(guard) => guard,
+            Err(e) => {
+                log::warn!("Rate limiter lock error during cleanup: {}", e);
+                return;
+            }
+        };
         let now = Instant::now();
         let max_age = Duration::from_secs(3600); // 1 hour
 

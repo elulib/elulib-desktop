@@ -6,22 +6,43 @@
 use elulib_desktop::constants::*;
 
 mod app_initialization_tests {
-    // These tests would require a mock of the Tauri environment
-    // to be executed without launching the complete application.
+    use super::*;
     
     #[test]
     fn test_app_structure() {
-        // Basic structure test
-        // In a real test environment, we could verify
-        // that the application builds correctly
-        assert!(true);
+        // Verify that all required constants are accessible
+        // This ensures the application structure is correct
+        assert!(!APP_URL.is_empty());
+        assert!(!APP_TITLE.is_empty());
+        assert!(!KEYRING_SERVICE_ID.is_empty());
+        assert!(WINDOW_WIDTH > 0.0);
+        assert!(WINDOW_HEIGHT > 0.0);
     }
     
     #[test]
     fn test_app_modules_are_available() {
-        // Verify that all required modules are available
-        // This is a compile-time test
-        assert!(true);
+        // Verify that all required modules are accessible
+        // This is a compile-time test that ensures module structure
+        
+        // Constants module
+        assert!(APP_URL.starts_with("https://"));
+        assert_eq!(CONNECTIVITY_PORT, 443);
+        
+        // Verify constants are properly defined
+        assert!(MAX_USERNAME_LENGTH > 0);
+        assert!(MAX_TOKEN_LENGTH > 0);
+        assert!(RATE_LIMIT_MAX_REQUESTS > 0);
+        assert!(RATE_LIMIT_WINDOW_SECS > 0);
+    }
+    
+    #[test]
+    fn test_app_configuration_consistency() {
+        // Verify configuration values are consistent
+        assert!(MIN_WINDOW_WIDTH <= WINDOW_WIDTH);
+        assert!(MIN_WINDOW_HEIGHT <= WINDOW_HEIGHT);
+        assert!(CONNECTIVITY_TIMEOUT_SECS > 0);
+        assert!(UPDATE_CHECK_DELAY_SECS > 0);
+        assert!(UPDATE_CHECK_COOLDOWN_SECS > UPDATE_CHECK_DELAY_SECS);
     }
 }
 
@@ -140,15 +161,74 @@ mod constants_tests {
     }
 }
 
+// Update check caching tests
+mod update_check_caching_tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn test_update_check_cooldown_constant() {
+        // Verify the cooldown constant is reasonable (24 hours = 86400 seconds)
+        assert_eq!(UPDATE_CHECK_COOLDOWN_SECS, 86400);
+        assert!(UPDATE_CHECK_COOLDOWN_SECS > 0);
+        assert!(UPDATE_CHECK_COOLDOWN_SECS <= 604800); // Should not be more than a week
+    }
+
+    #[test]
+    fn test_update_check_cooldown_is_24_hours() {
+        // Verify cooldown is exactly 24 hours
+        let hours = UPDATE_CHECK_COOLDOWN_SECS / 3600;
+        assert_eq!(hours, 24, "Update check cooldown should be 24 hours");
+    }
+
+    #[test]
+    fn test_update_check_cooldown_calculation() {
+        // Test the logic for determining if enough time has passed
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        
+        // Time exactly at cooldown should trigger check
+        let time_at_cooldown = now.saturating_sub(UPDATE_CHECK_COOLDOWN_SECS);
+        let time_since = now.saturating_sub(time_at_cooldown);
+        assert!(time_since >= UPDATE_CHECK_COOLDOWN_SECS);
+        
+        // Time just before cooldown should not trigger check
+        let time_before_cooldown = now.saturating_sub(UPDATE_CHECK_COOLDOWN_SECS - 1);
+        let time_since = now.saturating_sub(time_before_cooldown);
+        assert!(time_since < UPDATE_CHECK_COOLDOWN_SECS);
+    }
+
+    #[test]
+    fn test_update_check_cache_file_name() {
+        // Verify the cache file name is reasonable
+        let cache_file_name = "update_check_cache.json";
+        assert!(!cache_file_name.is_empty());
+        assert!(cache_file_name.ends_with(".json"));
+        assert!(cache_file_name.len() < 100); // Reasonable length
+    }
+}
+
 // Validation integration tests
 mod validation_integration_tests {
     use super::*;
+    use elulib_desktop::{normalize_username, validate_service, validate_token};
 
     #[test]
     fn test_validation_through_public_api() {
-        // Validation is tested through public commands
-        // This test documents that validation is integrated into the command layer
-        assert!(true);
+        // Test that validation functions work correctly with various inputs
+        // This verifies validation is integrated and functional
+        
+        // Valid inputs should pass
+        assert!(validate_service("com.elulib.desktop").is_ok());
+        assert!(normalize_username("testuser").is_ok());
+        assert!(validate_token("valid_token_123").is_ok());
+        
+        // Invalid inputs should fail
+        assert!(validate_service("invalid").is_err());
+        assert!(normalize_username("").is_err());
+        assert!(validate_token("").is_err());
     }
 
     #[test]
@@ -180,25 +260,81 @@ mod validation_integration_tests {
 
 // Error handling integration tests
 mod error_handling_integration_tests {
+    use elulib_desktop::{normalize_username, validate_service, validate_token};
+
     #[test]
     fn test_error_handling_through_public_api() {
-        // Error handling is tested through public commands
-        // This test documents that error handling is integrated into the command layer
-        assert!(true);
+        // Test that validation functions return proper error messages
+        // Error messages should be descriptive and user-friendly
+        
+        let service_error = validate_service("invalid");
+        assert!(service_error.is_err());
+        let error_msg = service_error.unwrap_err();
+        assert!(!error_msg.is_empty());
+        assert!(!error_msg.contains("unwrap")); // Should not expose internal details
+        assert!(!error_msg.contains("panic")); // Should not expose internal details
+        
+        let username_error = normalize_username("");
+        assert!(username_error.is_err());
+        let error_msg = username_error.unwrap_err();
+        assert!(!error_msg.is_empty());
+        assert!(error_msg.to_lowercase().contains("missing") || 
+                error_msg.to_lowercase().contains("empty"));
     }
 
     #[test]
     fn test_error_messages_are_user_friendly() {
         // Error messages should be helpful and not expose internal details
-        // This is verified in unit tests
-        assert!(true);
+        let test_cases: Vec<(&str, &str)> = vec![
+            ("", "missing"),
+            ("user with spaces", "invalid"),
+        ];
+        
+        for (input, expected_keyword) in test_cases {
+            let result = normalize_username(input);
+            assert!(result.is_err(), "Input '{}' should fail validation", input);
+            let error = result.unwrap_err().to_lowercase();
+            assert!(
+                error.contains(&expected_keyword.to_lowercase()),
+                "Error message should contain '{}', got: '{}'",
+                expected_keyword,
+                error
+            );
+        }
+        
+        // Test too long username separately
+        let long_username = "a".repeat(200);
+        let result = normalize_username(&long_username);
+        assert!(result.is_err(), "Long username should fail validation");
+        let error = result.unwrap_err().to_lowercase();
+        assert!(error.contains("long"), "Error should mention 'long', got: '{}'", error);
     }
 
     #[test]
     fn test_error_handling_consistency() {
-        // Error handling should be consistent across the application
-        // This is verified through integration with public commands
-        assert!(true);
+        // Error handling should be consistent across validation functions
+        // All should return Result with descriptive errors
+        
+        // Test empty string handling across all validation functions
+        let service_result = validate_service("");
+        assert!(service_result.is_err(), "Empty service should fail validation");
+        let service_error = service_result.unwrap_err();
+        assert!(!service_error.is_empty());
+        
+        let username_result = normalize_username("");
+        assert!(username_result.is_err(), "Empty username should fail validation");
+        let username_error = username_result.unwrap_err();
+        assert!(!username_error.is_empty());
+        
+        let token_result = validate_token("");
+        assert!(token_result.is_err(), "Empty token should fail validation");
+        let token_error = token_result.unwrap_err();
+        assert!(!token_error.is_empty());
+        
+        // All error messages should be non-empty strings
+        assert!(!service_error.is_empty());
+        assert!(!username_error.is_empty());
+        assert!(!token_error.is_empty());
     }
 }
 

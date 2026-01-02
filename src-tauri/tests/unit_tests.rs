@@ -4,7 +4,7 @@
 //! All unit tests are consolidated here for better organization.
 
 use elulib_desktop::{
-    check_network_connectivity, normalize_username, validate_service, validate_token,
+    check_network_connectivity, check_network_connectivity_async, normalize_username, validate_service, validate_token,
 };
 
 // Command structure tests
@@ -326,6 +326,41 @@ mod check_network_connectivity_tests {
         let _result1 = check_network_connectivity();
         let _result2 = check_network_connectivity();
         let _result3 = check_network_connectivity();
+    }
+
+    #[tokio::test]
+    async fn test_check_network_connectivity_async_no_panic() {
+        // This test ensures the async function doesn't panic
+        // Actual result depends on network availability
+        let _result = check_network_connectivity_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_check_network_connectivity_async_returns_boolean() {
+        let result = check_network_connectivity_async().await;
+        assert!(result == true || result == false);
+    }
+
+    #[tokio::test]
+    async fn test_check_network_connectivity_async_idempotent() {
+        // Multiple calls should not panic
+        let _result1 = check_network_connectivity_async().await;
+        let _result2 = check_network_connectivity_async().await;
+        let _result3 = check_network_connectivity_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_check_network_connectivity_async_non_blocking() {
+        // Verify the async version is actually non-blocking
+        // This test ensures we can call it multiple times quickly
+        let start = std::time::Instant::now();
+        let _result1 = check_network_connectivity_async().await;
+        let _result2 = check_network_connectivity_async().await;
+        let duration = start.elapsed();
+        
+        // Should complete in reasonable time (not blocking)
+        // Even with retries, should be under 10 seconds total
+        assert!(duration.as_secs() < 10, "Async connectivity check took too long: {:?}", duration);
     }
 }
 

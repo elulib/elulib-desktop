@@ -24,9 +24,15 @@ use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_updater::UpdaterExt;
 
 // Network and async utilities
-use std::net::{TcpStream, ToSocketAddrs};
+use std::net::ToSocketAddrs;
 use std::sync::OnceLock;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tokio::net::TcpStream;
+use tokio::time::timeout;
+
+// File I/O
+use std::fs;
+use std::path::PathBuf;
 
 // Constants
 use constants::*;
@@ -36,17 +42,17 @@ use rate_limit::RateLimiter;
 
 // === UTILITY FUNCTIONS ===
 
-/// Checks network connectivity securely with retry logic
+/// Checks network connectivity securely with retry logic (async version)
 /// 
-/// Uses a synchronous approach compatible with Tauri setup
-/// with DNS resolution, timeout, and exponential backoff retries to avoid blocking.
+/// Uses an asynchronous approach with DNS resolution, timeout, and exponential backoff retries.
+/// This is non-blocking and should be used for all connectivity checks.
 /// 
 /// # Implementation Details
 /// 
 /// - Attempts connection with configurable timeout
 /// - Implements exponential backoff for retries (up to MAX_CONNECTIVITY_RETRIES)
 /// - Tries multiple DNS addresses if available
-/// - Uses short timeouts to prevent UI freezing
+/// - Uses async timeouts to prevent blocking
 /// 
 /// # Performance
 /// 
@@ -54,32 +60,29 @@ use rate_limit::RateLimiter;
 /// - Retries: exponential backoff (500ms, 1000ms, etc.)
 /// - Maximum total time: ~4-6 seconds in worst case
 /// - Typical case: < 2 seconds if connection is available
+/// - Non-blocking: does not freeze UI
 /// 
 /// # Returns
 /// * `true` if connection is available
 /// * `false` if connection is not available after all retries
 #[cfg_attr(test, allow(dead_code))]
-#[doc(hidden)]
-pub fn check_network_connectivity() -> bool {
+pub async fn check_network_connectivity_async() -> bool {
     // Try with retries using exponential backoff
     for attempt in 0..=MAX_CONNECTIVITY_RETRIES {
         if attempt > 0 {
             // Exponential backoff: 500ms, 1000ms, 2000ms, etc.
             let delay_ms = RETRY_BASE_DELAY_MS * (1 << (attempt - 1));
             log::debug!("Retrying connectivity check (attempt {}/{}) after {}ms delay", attempt + 1, MAX_CONNECTIVITY_RETRIES + 1, delay_ms);
-            std::thread::sleep(Duration::from_millis(delay_ms));
+            tokio::time::sleep(Duration::from_millis(delay_ms)).await;
         }
 
         match (CONNECTIVITY_HOST, CONNECTIVITY_PORT).to_socket_addrs() {
             Ok(addresses) => {
                 // Try each resolved address
                 for address in addresses {
-                    match TcpStream::connect_timeout(&address, Duration::from_secs(CONNECTIVITY_TIMEOUT_SECS)) {
-                        Ok(stream) => {
-                            // Configure timeouts to avoid blocking
-                            let _ = stream.set_read_timeout(Some(Duration::from_secs(TCP_RW_TIMEOUT_SECS)));
-                            let _ = stream.set_write_timeout(Some(Duration::from_secs(TCP_RW_TIMEOUT_SECS)));
-                            
+                    let timeout_duration = Duration::from_secs(CONNECTIVITY_TIMEOUT_SECS);
+                    match timeout(timeout_duration, TcpStream::connect(&address)).await {
+                        Ok(Ok(_stream)) => {
                             if attempt > 0 {
                                 log::info!("TCP connection successful to {} via {} (after {} retries)", CONNECTIVITY_HOST, address, attempt);
                             } else {
@@ -87,8 +90,11 @@ pub fn check_network_connectivity() -> bool {
                             }
                             return true;
                         }
-                        Err(e) => {
+                        Ok(Err(e)) => {
                             log::debug!("TCP connection failed to {} via {} - {}", CONNECTIVITY_HOST, address, e);
+                        }
+                        Err(_) => {
+                            log::debug!("TCP connection timeout to {} via {}", CONNECTIVITY_HOST, address);
                         }
                     }
                 }
@@ -110,6 +116,21 @@ pub fn check_network_connectivity() -> bool {
     }
 
     false
+}
+
+/// Synchronous wrapper for network connectivity check (for backward compatibility)
+/// 
+/// This function is deprecated and should only be used in tests.
+/// Use `check_network_connectivity_async()` instead.
+#[cfg_attr(test, allow(dead_code))]
+#[doc(hidden)]
+pub fn check_network_connectivity() -> bool {
+    // Use tokio runtime for synchronous execution
+    let rt = tokio::runtime::Runtime::new().unwrap_or_else(|e| {
+        log::error!("Failed to create tokio runtime: {}", e);
+        std::process::exit(1);
+    });
+    rt.block_on(check_network_connectivity_async())
 }
 
 /// Validates that the keyring service is authorized
@@ -249,21 +270,24 @@ fn log_token_operation_audit(
     }
 }
 
-/// Creates the main window based on connection state
+/// Creates the main window and checks connectivity asynchronously
 /// 
-/// If connectivity is available, loads the web application.
-/// Otherwise, displays a local error page with retry option.
+/// Shows the window immediately with a loading/error page, then navigates to the
+/// web application once connectivity is confirmed. This provides instant startup
+/// without blocking the UI.
 /// 
 /// # Network Connectivity Check
 /// 
 /// The connectivity check uses:
+/// - Async non-blocking operations
 /// - Configurable timeout (2 seconds per attempt)
 /// - Exponential backoff retry mechanism (up to 2 retries)
 /// - Multiple DNS address resolution attempts
-/// - Fast failure to prevent UI blocking
+/// - Runs in background after window is shown
 /// 
-/// Total maximum time: ~4-6 seconds in worst case
+/// Total maximum time: ~4-6 seconds in worst case (non-blocking)
 /// Typical time: < 2 seconds if connection is available
+/// Window appears: < 100ms (instant)
 /// 
 /// # Error Handling
 /// 
@@ -278,36 +302,12 @@ fn log_token_operation_audit(
 /// * `Ok(())` if the window was created successfully
 /// * `Err(tauri::Error)` if window creation failed
 fn create_main_window(app: &App) -> tauri::Result<()> {
-    // Check connectivity with retry logic and exponential backoff
-    // This is synchronous but uses short timeouts and retries to minimize blocking
-    let (url, _is_online) = if check_network_connectivity() {
-        // Connection available - load the web application
-        match APP_URL.parse() {
-            Ok(parsed_url) => {
-                log::info!("Connection detected, loading {}", APP_URL);
-                (WebviewUrl::External(parsed_url), true)
-            }
-            Err(e) => {
-                log::error!("URL parsing error for {}: {}", APP_URL, e);
-                // Fallback to local error page via Tauri protocol
-                (
-                    WebviewUrl::App("connection-error.html".into()),
-                    false,
-                )
-            }
-        }
-    } else {
-        // No connection - display local error page
-        log::info!("No connection detected, displaying local error page");
-        (
-            WebviewUrl::App("connection-error.html".into()),
-            false,
-        )
-    };
+    // Show window immediately with error page (will navigate if online)
+    // This provides instant startup without blocking
+    let initial_url = WebviewUrl::App("connection-error.html".into());
+    log::info!("Creating window immediately for instant startup");
 
-    log::info!("Loading URL: {:?}", url);
-
-    let window = WebviewWindowBuilder::new(app, "main", url)
+    let window = WebviewWindowBuilder::new(app, "main", initial_url)
         .title(APP_TITLE)
         .background_color(Color(255, 255, 255, 255))
         .inner_size(WINDOW_WIDTH, WINDOW_HEIGHT)
@@ -345,15 +345,162 @@ fn create_main_window(app: &App) -> tauri::Result<()> {
         }
     }
 
+    // Check connectivity asynchronously and navigate when ready
+    let app_handle = app.handle().clone();
+    tauri::async_runtime::spawn(async move {
+        log::info!("Checking network connectivity in background...");
+        let is_online = check_network_connectivity_async().await;
+
+        if let Some(window) = app_handle.get_webview_window("main") {
+            if is_online {
+                match APP_URL.parse() {
+                    Ok(parsed_url) => {
+                        log::info!("Connection detected, navigating to {}", APP_URL);
+                        if let Err(e) = window.navigate(parsed_url) {
+                            log::error!("Failed to navigate to {}: {}", APP_URL, e);
+                        }
+                    }
+                    Err(e) => {
+                        log::error!("URL parsing error for {}: {}", APP_URL, e);
+                    }
+                }
+            } else {
+                log::info!("No connection detected, keeping error page");
+            }
+        }
+    });
+
     Ok(())
+}
+
+/// Gets the path to the update check cache file
+#[cfg_attr(test, allow(dead_code))]
+fn get_update_cache_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
+    app.path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to get app data directory: {}", e))
+        .map(|mut path| {
+            // Ensure directory exists
+            if let Err(e) = fs::create_dir_all(&path) {
+                log::warn!("Failed to create app data directory: {}", e);
+            }
+            path.push("update_check_cache.json");
+            path
+        })
+}
+
+/// Reads the last update check timestamp from cache
+#[cfg_attr(test, allow(dead_code))]
+fn read_last_update_check<R: Runtime>(app: &AppHandle<R>) -> Option<u64> {
+    let cache_path = get_update_cache_path(app).ok()?;
+    
+    match fs::read_to_string(&cache_path) {
+        Ok(content) => {
+            #[derive(serde::Deserialize)]
+            struct UpdateCache {
+                last_check: u64,
+            }
+            
+            match serde_json::from_str::<UpdateCache>(&content) {
+                Ok(cache) => Some(cache.last_check),
+                Err(e) => {
+                    log::debug!("Failed to parse update cache: {}", e);
+                    None
+                }
+            }
+        }
+        Err(e) => {
+            log::debug!("Failed to read update cache: {}", e);
+            None
+        }
+    }
+}
+
+/// Writes the current timestamp to the update check cache
+#[cfg_attr(test, allow(dead_code))]
+fn write_last_update_check<R: Runtime>(app: &AppHandle<R>) {
+    let cache_path = match get_update_cache_path(app) {
+        Ok(path) => path,
+        Err(e) => {
+            log::warn!("Failed to get cache path: {}", e);
+            return;
+        }
+    };
+    
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    
+    #[derive(serde::Serialize)]
+    struct UpdateCache {
+        last_check: u64,
+    }
+    
+    let cache = UpdateCache { last_check: now };
+    
+    match serde_json::to_string_pretty(&cache) {
+        Ok(json) => {
+            if let Err(e) = fs::write(&cache_path, json) {
+                log::warn!("Failed to write update cache: {}", e);
+            } else {
+                log::debug!("Updated check cache written to {:?}", cache_path);
+            }
+        }
+        Err(e) => {
+            log::warn!("Failed to serialize update cache: {}", e);
+        }
+    }
+}
+
+/// Checks if enough time has passed since the last update check
+#[cfg_attr(test, allow(dead_code))]
+fn should_check_for_updates<R: Runtime>(app: &AppHandle<R>) -> bool {
+    let last_check = match read_last_update_check(app) {
+        Some(timestamp) => timestamp,
+        None => {
+            log::debug!("No previous update check found, will check");
+            return true;
+        }
+    };
+    
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    
+    let time_since_last_check = now.saturating_sub(last_check);
+    
+    if time_since_last_check >= UPDATE_CHECK_COOLDOWN_SECS {
+        log::debug!(
+            "Last update check was {} seconds ago (cooldown: {}), will check",
+            time_since_last_check,
+            UPDATE_CHECK_COOLDOWN_SECS
+        );
+        true
+    } else {
+        let remaining = UPDATE_CHECK_COOLDOWN_SECS - time_since_last_check;
+        log::debug!(
+            "Skipping update check (last check {} seconds ago, {} seconds remaining)",
+            time_since_last_check,
+            remaining
+        );
+        false
+    }
 }
 
 /// Checks and installs available updates
 /// 
 /// Async function called automatically after startup.
+/// Only checks if enough time has passed since the last check (24 hours by default).
 /// Shows a French dialog asking if the user wants to update now or later.
 /// If yes, downloads and installs silently, then exits for fast update.
 async fn perform_update_check<R: Runtime>(app: &AppHandle<R>) {
+    // Check if we should skip the update check based on cache
+    if !should_check_for_updates(app) {
+        return;
+    }
+    
     let updater = match app.updater() {
         Ok(updater) => updater,
         Err(e) => {
@@ -364,6 +511,9 @@ async fn perform_update_check<R: Runtime>(app: &AppHandle<R>) {
 
     match updater.check().await {
         Ok(Some(update)) => {
+            // Write cache immediately to prevent multiple dialogs
+            write_last_update_check(app);
+            
             let current_version = app.package_info().version.to_string();
             let dialog_message = format!(
                 "Une nouvelle version est disponible, voulez-vous mettre à jour dès maintenant ?\n\n\
@@ -428,8 +578,15 @@ async fn perform_update_check<R: Runtime>(app: &AppHandle<R>) {
                 log::debug!("User chose to update later");
             }
         }
-        Ok(None) => log::debug!("No update available"),
-        Err(e) => log::debug!("Error checking for updates: {}", e),
+        Ok(None) => {
+            // No update available, still write cache to avoid checking again soon
+            write_last_update_check(app);
+            log::debug!("No update available");
+        }
+        Err(e) => {
+            log::debug!("Error checking for updates: {}", e);
+            // Don't write cache on error, so we can retry sooner
+        }
     }
 }
 
@@ -539,10 +696,8 @@ async fn get_token(service: String, username: String) -> Result<String, String> 
 /// Used by the error page to allow the user to retry
 #[command]
 async fn reload_app(app: AppHandle) -> Result<(), String> {
-    // Check connectivity asynchronously
-    let is_online = tauri::async_runtime::spawn_blocking(check_network_connectivity)
-        .await
-        .map_err(|e| format!("Network verification error: {}", e))?;
+    // Check connectivity asynchronously (using the new async function)
+    let is_online = check_network_connectivity_async().await;
 
     if let Some(window) = app.get_webview_window("main") {
         if is_online {
@@ -677,6 +832,18 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 tokio::time::sleep(Duration::from_secs(UPDATE_CHECK_DELAY_SECS)).await;
                 perform_update_check(&app_handle).await;
+            });
+            
+            // Periodic rate limiter cleanup to prevent memory growth
+            // Run cleanup every hour to remove old entries
+            tauri::async_runtime::spawn(async move {
+                let mut interval = tokio::time::interval(Duration::from_secs(3600)); // 1 hour
+                interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+                loop {
+                    interval.tick().await;
+                    get_rate_limiter().cleanup();
+                    log::debug!("Rate limiter cleanup completed");
+                }
             });
             
             Ok(())
